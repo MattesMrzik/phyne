@@ -780,7 +780,6 @@ fn tkf92_cost_builder_fails() {
     );
 }
 
-
 #[test]
 fn tkf92_fixed_build_default() {
     let tkf_indel_cost =
