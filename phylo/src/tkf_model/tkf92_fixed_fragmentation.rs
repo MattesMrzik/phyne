@@ -35,6 +35,17 @@ impl TKF92FixedIndelModel {
     }
 }
 
+impl Default for TKF92FixedIndelModel {
+    fn default() -> Self {
+        let r = DEFAULT_R;
+        Self {
+            params: vec![DEFAULT_LAMBDA, DEFAULT_MU, r],
+            ln_r: r.ln(),
+            fragmentation: vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 impl TKFModel for TKF92FixedIndelModel {
     fn lambda(&self) -> f64 {
@@ -87,6 +98,15 @@ impl TKFModel for TKF92FixedIndelModel {
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
         let alignment_blocks = blocks_of_alignment(msa);
         merge_fragmentation_with_blocks(&self.fragmentation, &alignment_blocks)
+    }
+
+    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA> {
+        let info = TKFIndelModelInfo::new(self, &phylo);
+        TKFIndelCost {
+            model: self.clone(),
+            phylo,
+            model_info: RefCell::new(info),
+        }
     }
 }
 

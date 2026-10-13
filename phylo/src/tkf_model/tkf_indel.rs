@@ -11,8 +11,9 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ModelSearchCost, ParamRange, TreeSearchCost};
 use crate::phylo_info::PhyloInfo;
 use crate::random::FakeGenerator;
-use crate::substitution_models::FreqVector;
+use crate::substitution_models::{FreqVector, QMatrix, SubstitutionCost};
 use crate::tkf_model::reestimate::EdgeSeqsReestimator;
+use crate::tkf_model::TKFCost;
 use crate::tree::NodeIdx::{self, Internal, Leaf};
 use crate::tree::Tree;
 use crate::REPORT_ISSUES_URL;
@@ -23,7 +24,6 @@ lazy_static! {
 
 pub(super) static DEFAULT_LAMBDA: f64 = 1.0;
 pub(super) static DEFAULT_MU: f64 = 1.1;
-pub(super) static DEFAULT_LAMBDA_MU_RATIO: f64 = 0.9;
 pub(super) static DEFAULT_R: f64 = 0.5;
 
 /// For the function [u]: only if the time is shorter than this threshold, we use the Taylor approximation.
@@ -45,7 +45,7 @@ pub(super) enum Event {
 /// Trait for TKF indel models (i.e., [TKF91IndelModel](`crate::tkf_model::TKF91IndelModel`),
 /// [TKF92IndelModel](`crate::tkf_model::TKF92IndelModel`)).
 #[allow(clippy::upper_case_acronyms)]
-pub trait TKFModel: Clone + Display {
+pub trait TKFModel: Clone + Display + Default {
     // TODO: it might be better for model optimisation to have parameter lambda and scale s = mu/lambda,
     // because of the constraint that mu > lambda.
     // See issue #152 https://github.com/acg-team/rust-phylo/issues/152
@@ -70,6 +70,20 @@ pub trait TKFModel: Clone + Display {
     /// corresponding to the evolutionary events in this block [`TKFModel::block_prob`] computes
     /// the ln probability of the block under the model.
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize>;
+    /// Returns a [TKFIndelCost](`TKFIndelCost`) for this model.
+    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA>;
+    /// Returns a [TKFCost](`TKFCost`) for this model and a given substitution cost.
+    fn cost<Q: QMatrix, AA: AncestralAlignment>(
+        &self,
+        subst_cost: SubstitutionCost<Q, AA>,
+        phylo: PhyloInfo<AA>,
+    ) -> TKFCost<Q, Self, AA> {
+        let indel_cost = self.indel_cost(phylo);
+        TKFCost {
+            indel_cost,
+            subst_cost,
+        }
+    }
 }
 
 // TODO: link our paper once it is published. For now see original TKF92 paper: https://doi.org/10.1007/bf00163848
@@ -603,52 +617,4 @@ pub(super) fn get_block_lengths(blocks: &[usize]) -> Vec<usize> {
         };
     }
     block_lens
-}
-
-#[cfg(test)]
-#[cfg_attr(coverage, coverage(off))]
-mod private_tests {
-
-    use super::*;
-    use crate::alphabets::Alphabet;
-    use crate::tkf_model::tests::setup_test_phylo;
-    use crate::tkf_model::TKF91IndelCostBuilder;
-    use crate::tkf_model::TKF92IndelCostBuilder;
-    use crate::tkf_model::TKFModel;
-
-    #[cfg(test)]
-    fn validate_lambda_mu(l: f64, m: f64, l_expected: f64, m_expected: f64) {
-        let cost = TKF91IndelCostBuilder::new(&[l, m], setup_test_phylo(Alphabet::dna()))
-            .build()
-            .unwrap();
-        assert_eq!(cost.model.lambda(), l_expected);
-        assert_eq!(cost.model.mu(), m_expected);
-        let cost = TKF92IndelCostBuilder::new(&[l, m, 0.1], setup_test_phylo(Alphabet::dna()))
-            .build()
-            .unwrap();
-        assert_eq!(cost.model.lambda(), l_expected);
-        assert_eq!(cost.model.mu(), m_expected);
-    }
-
-    #[cfg(test)]
-    fn validate_r(r: f64, r_expected: f64) {
-        let cost = TKF92IndelCostBuilder::new(&[1.0, 2.0, r], setup_test_phylo(Alphabet::dna()))
-            .build()
-            .unwrap();
-        assert_eq!(cost.model.r(), r_expected);
-    }
-
-    #[test]
-    fn tkf_validate_params_for_builder() {
-        validate_lambda_mu(-1.0, -2.0, DEFAULT_LAMBDA, DEFAULT_MU);
-        validate_lambda_mu(0.0, 2.0, DEFAULT_LAMBDA_MU_RATIO * 2.0, 2.0);
-        validate_lambda_mu(2.0, -0.1, 2.0, 2.0 / DEFAULT_LAMBDA_MU_RATIO);
-        validate_lambda_mu(2.0, 1.9999, 2.0, 2.0 / DEFAULT_LAMBDA_MU_RATIO);
-        validate_lambda_mu(1.2, 1.21, 1.2, 1.21);
-        validate_r(-0.5, DEFAULT_R);
-        validate_r(0.0, DEFAULT_R);
-        validate_r(1.0, DEFAULT_R);
-        validate_r(1.5, DEFAULT_R);
-        validate_r(0.1, 0.1);
-    }
 }

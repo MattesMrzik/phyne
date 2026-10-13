@@ -1,16 +1,19 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 
+use log::warn;
 use num_enum::FromPrimitive;
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, merge_fragmentation_with_blocks, validate_fragmentation,
-    validate_lambda_mu, validate_r, TKF92Parameters, TKFIndelCost, TKFIndelModelInfo, TKFModel,
+    blocks_of_alignment, merge_fragmentation_with_blocks, validate_fragmentation, TKF92Parameters,
+    TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
 };
 use crate::Result;
+
+pub const DEFAULT_LAMBDA_MU_RATIO: f64 = 0.9;
 
 /// [TKF92IndelModel](`super::TKF92IndelModel`) with additional block borders (and without a substitution model),
 /// which means that the provided blocks will be used in addition to the blocks determined from
@@ -31,6 +34,77 @@ pub struct TKF92IndelModelAddBlocks {
 impl TKF92IndelModelAddBlocks {
     pub fn r(&self) -> f64 {
         self.params[usize::from(TKF92Parameters::R)]
+    }
+}
+
+/// Validates the TKF indel parameters lambda and mu. If they are not valid, they are set to
+/// default values and a warning is logged.
+/// Returns valid (lambda, mu).
+#[cfg(test)]
+pub(super) fn validate_lambda_mu(params: &mut [f64]) {
+    let lambda_id = usize::from(TKF92Parameters::Lambda);
+    let mu_id = usize::from(TKF92Parameters::Mu);
+    let lambda = params[lambda_id];
+    let mu = params[mu_id];
+
+    if lambda <= 0.0 && mu <= 0.0 {
+        warn!(
+            "Both lambda and mu must be positive. Setting lambda to {DEFAULT_LAMBDA} and mu to {DEFAULT_MU}."
+        );
+        params[lambda_id] = DEFAULT_LAMBDA;
+        params[mu_id] = DEFAULT_MU;
+    } else if lambda <= 0.0 {
+        params[lambda_id] = DEFAULT_LAMBDA_MU_RATIO * mu;
+        warn!(
+            "Tried to set lambda to invalid value {lambda}. \
+            It must be in (0, mu) with mu = {mu}. \
+            Setting lambda to {DEFAULT_LAMBDA_MU_RATIO}*mu = {}",
+            params[lambda_id]
+        );
+    } else if mu <= lambda {
+        params[mu_id] = lambda / DEFAULT_LAMBDA_MU_RATIO;
+        warn!(
+            "Tried to set mu to invalid value {mu}. \
+            It must be in (lambda, infinity) with lambda = {lambda}. \
+            Setting mu to lambda/{DEFAULT_LAMBDA_MU_RATIO} = {}",
+            params[mu_id]
+        );
+    }
+}
+/// Validates the TKF92 parameter `r`. If it is not valid, it is set to
+/// its default value and a warning is logged.
+/// Returns valid `r`.
+#[cfg(test)]
+pub(super) fn validate_r(params: &mut [f64]) {
+    let r_id = usize::from(TKF92Parameters::R);
+    let r = params[r_id];
+    if r == 0.0 {
+        params[r_id] = DEFAULT_R;
+        warn!(
+            "Tried to set r to invalid value 0. \
+            It must be in (0, 1). Setting r to {}. \
+            Hint: r = 0 yields special case: TKF91 model, consider using that instead.",
+            params[r_id]
+        );
+    } else if r <= 0.0 || r >= 1.0 {
+        params[r_id] = DEFAULT_R;
+        warn!(
+            "Tried to set r to invalid value {r}. \
+            It must be in (0, 1). Setting r to {}.",
+            params[r_id]
+        );
+    }
+}
+
+impl Default for TKF92IndelModelAddBlocks {
+    fn default() -> Self {
+        let r = DEFAULT_R;
+        Self {
+            params: vec![DEFAULT_LAMBDA, DEFAULT_MU, r],
+            ln_r: r.ln(),
+            ln_one_minus_r_over_r: (-r).ln_1p() - r.ln(),
+            additional_blocks: vec![],
+        }
     }
 }
 
@@ -89,6 +163,13 @@ impl TKFModel for TKF92IndelModelAddBlocks {
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
         let blocks = blocks_of_alignment(msa);
         merge_fragmentation_with_blocks(&blocks, &self.additional_blocks)
+    }
+
+    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA> {
+        // Just to make the compiler happy, will be remove when I close https://github.com/acg-team/phyne/pull/158
+        TKF92IndelAddBlocksCostBuilder::new(&self.params, self.additional_blocks.clone(), phylo)
+            .build()
+            .unwrap()
     }
 }
 
