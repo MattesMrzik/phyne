@@ -4,7 +4,7 @@ use crate::Result;
 
 /// Trait for ancestral sequence reconstruction.
 pub trait AncestralSequenceReconstruction<A: Alignment, AA: AncestralAlignment> {
-    /// Checks of all node IDs (leaves and internal) in the tree are unique and calls
+    /// Checks if all node IDs (leaves and internal) in the tree are unique and calls
     /// [`Self::reconstruct_ancestral_seqs_unchecked`].
     fn reconstruct_ancestral_seqs(&self, mut phylo: PhyloInfo<A>) -> Result<PhyloInfo<AA>> {
         set_missing_tree_node_ids(&mut phylo.tree)?;
