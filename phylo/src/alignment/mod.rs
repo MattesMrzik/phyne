@@ -10,7 +10,7 @@ use crate::phylo_info::{
     set_missing_tree_node_ids, validate_ids_with_ancestors, validate_taxa_ids,
 };
 use crate::tree::{NodeIdx, NodeIdx::Internal as Int, NodeIdx::Leaf, Tree};
-use crate::{align, aligned_seq, bail, record, Result};
+use crate::{align, aligned_seq, bail, record, Result, REPORT_ISSUES_URL};
 
 pub mod sequences;
 pub use sequences::*;
@@ -612,7 +612,13 @@ impl MASA {
         let new_record = record!(id, old_record.desc(), &new_seq);
         self.ancestral_seqs
             .update_record(id, new_record)
-            .expect("updating ancestral record failed. Please report this at https://github.com/acg-team/rust-phylo/issues");
+            .unwrap_or_else(|e| {
+                panic!(
+                    "updating ancestral record failed. \
+                     Please report this at {REPORT_ISSUES_URL}. \
+                     Error: {e:?}"
+                )
+            })
     }
 }
 
