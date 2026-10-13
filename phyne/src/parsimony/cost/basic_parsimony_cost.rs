@@ -150,7 +150,6 @@ impl BasicParsimonyInfo {
 mod private_tests {
     use crate::alignment::{Alignment, Sequences, MSA};
     use crate::parsimony::BasicParsimonyCost;
-    use crate::phylo_info::PhyloInfo;
     use crate::{record_wo_desc as record, tree};
 
     #[test]
@@ -163,10 +162,7 @@ mod private_tests {
         ]);
         let tree = tree!("((A:1.0,B:1.0):1.0,(C:1.0,D:1.0):1.0):0.0;");
 
-        let info = PhyloInfo {
-            msa: MSA::from_aligned_unchecked(seqs, &tree),
-            tree,
-        };
+        let info = MSA::from_aligned_unchecked(seqs, tree);
         let cost = BasicParsimonyCost::new(info).unwrap();
         assert_eq!(cost.score(), 5.0);
         assert_eq!(cost.score(), 5.0);

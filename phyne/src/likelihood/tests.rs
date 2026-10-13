@@ -7,7 +7,6 @@ use crate::alignment::{Alignment, Sequences, MSA};
 use crate::alphabets::Alphabet;
 use crate::io::read_sequences;
 use crate::likelihood::{ModelSearchCost, TreeSearchCost};
-use crate::phylo_info::PhyloInfo;
 use crate::pip_model::{PIPCost, PIPCostBuilder as PIPCB, PIPModel};
 use crate::substitution_models::{
     dna_models::*, protein_models::*, QMatrix, SubstModel, SubstitutionCost,
@@ -27,12 +26,11 @@ fn setup_test_subst_cost<Q: QMatrix>(model: SubstModel<Q>) -> SubstitutionCost<Q
     let fldr = Path::new("./data");
     let tree = tree!(&fs::read_to_string(fldr.join("Huelsenbeck_example.newick")).unwrap());
     let records = read_sequences(fldr.join("Huelsenbeck_example_long_DNA.fasta")).unwrap();
-    let msa = Alignment::from_aligned(
+    let info = Alignment::from_aligned(
         Sequences::with_alphabet_unchecked(records.clone(), Q::alphabet()),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { msa, tree };
 
     SCB::new(model, info).build().unwrap()
 }
@@ -76,14 +74,13 @@ fn setup_test_pip_cost<Q: QMatrix>(model: PIPModel<Q>) -> PIPCost<Q, MSA> {
     let records = read_sequences(fldr.join("Huelsenbeck_example_long_DNA.fasta")).unwrap();
 
     let tree = tree!(&fs::read_to_string(fldr.join("Huelsenbeck_example.newick")).unwrap());
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::with_alphabet_unchecked(records.clone(), Q::alphabet()),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { msa, tree };
 
-    PIPCB::new(model, info).build().unwrap()
+    PIPCB::new(model, phylo).build().unwrap()
 }
 
 #[test]
@@ -139,8 +136,7 @@ fn alphabet_mismatch_subst_model_template<Q: QMatrix>(
     let fldr = Path::new("./data");
     let records = read_sequences(fldr.join("Huelsenbeck_example_long_DNA.fasta")).unwrap();
     let tree = tree!(&fs::read_to_string(fldr.join("Huelsenbeck_example.newick")).unwrap());
-    let msa = MSA::from_aligned(Sequences::with_alphabet_unchecked(records, alpha), &tree).unwrap();
-    let info = PhyloInfo { msa, tree };
+    let info = MSA::from_aligned(Sequences::with_alphabet_unchecked(records, alpha), tree).unwrap();
 
     let res = SCB::new(model, info).build();
 
@@ -172,13 +168,12 @@ fn alphabet_mismatch_subst_pip_template<Q: QMatrix>(model: PIPModel<Q>, alpha: &
     let fldr = Path::new("./data");
     let records = read_sequences(fldr.join("Huelsenbeck_example_long_DNA.fasta")).unwrap();
     let tree = tree!(&fs::read_to_string(fldr.join("Huelsenbeck_example.newick")).unwrap());
-    let msa: MSA = MSA::from_aligned(
+    let info = MSA::from_aligned(
         Sequences::with_alphabet_unchecked(records.clone(), alpha),
-        &tree,
+        tree,
     )
     .unwrap();
 
-    let info = PhyloInfo { msa, tree };
     let res = PIPCB::new(model, info).build();
 
     assert_matches!(

@@ -35,7 +35,7 @@ pub struct ParsimonyAligner<PS: ParsimonyScoring> {
 }
 
 impl<PS: ParsimonyScoring + Clone, A: Alignment> Aligner<A> for ParsimonyAligner<PS> {
-    fn align_unchecked(&self, seqs: &Sequences, tree: &Tree) -> A {
+    fn align_unchecked(&self, seqs: Sequences, tree: Tree) -> PhyloInfo<A> {
         self.align_with_scores(seqs, tree).0
     }
 }
@@ -48,16 +48,16 @@ impl default::Default for ParsimonyAligner<SimpleScoring> {
     }
 }
 
-impl<'a, PS: ParsimonyScoring + Clone> ParsimonyAligner<PS> {
+impl<PS: ParsimonyScoring + Clone> ParsimonyAligner<PS> {
     pub fn new(scoring: PS) -> ParsimonyAligner<PS> {
         ParsimonyAligner { scoring }
     }
 
     pub fn align_with_scores<A: Alignment>(
         &self,
-        seqs: &'a Sequences,
-        tree: &'a Tree,
-    ) -> (A, Vec<f64>) {
+        seqs: Sequences,
+        tree: Tree,
+    ) -> (PhyloInfo<A>, Vec<f64>) {
         info!("Starting the IndelMAP alignment");
 
         let order = tree.postorder();
@@ -109,7 +109,7 @@ impl<'a, PS: ParsimonyScoring + Clone> ParsimonyAligner<PS> {
         // we instead get the aligned Sequences and then create the alignment from it. This discards the internal
         // alignments and rebuilds them when calling `from_aligned`, which might not be ideal.
         // See issue #79 https://github.com/acg-team/phyne/issues/79
-        let leaf_maps = PhyloInfo::<A>::compile_leaf_map(&tree.root, &alignments, seqs, tree);
+        let leaf_maps = PhyloInfo::<A>::compile_leaf_map(&tree.root, &alignments, &seqs, &tree);
         let aligned_seqs = Sequences::with_alphabet_unchecked(
             leaf_maps
                 .iter()

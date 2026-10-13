@@ -309,12 +309,12 @@ fn tkf91_get_blocks() {
         record!("B1", b"--ARAW"),
         record!("I1", b"AAAA-A"),
     ]);
-    let msa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
+    let phylo = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
 
-    let blocks = TKF91IndelModel::default().get_blocks(&msa);
+    let blocks = TKF91IndelModel::default().get_blocks(&phylo.msa);
     let block_lens = get_block_lengths(&blocks);
 
-    assert_eq!(blocks, (1..msa.len() + 1).collect::<Vec<usize>>());
+    assert_eq!(blocks, (1..phylo.msa.len() + 1).collect::<Vec<usize>>());
     assert_eq!(block_lens, vec![1; 6]);
 }
 
@@ -327,9 +327,9 @@ fn tkf92_get_blocks() {
         record!("I1", b"AAA-A"),
     ]);
 
-    let msa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
+    let phylo = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
 
-    let blocks = TKF92IndelModel::default().get_blocks(&msa);
+    let blocks = TKF92IndelModel::default().get_blocks(&phylo.msa);
     let block_lens = get_block_lengths(&blocks);
 
     assert_eq!(blocks, vec![1, 3, 4, 5]);
@@ -345,7 +345,7 @@ fn tkf92_fixed_get_blocks() {
         record!("I1", b"AAAAAAA-A"),
     ]);
 
-    let msa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
+    let phylo = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
 
     let fragmentation = vec![1, 2, 7];
     let model = TKF92FixedIndelModel {
@@ -353,7 +353,7 @@ fn tkf92_fixed_get_blocks() {
         ln_r: 0.2_f64.ln(),
         fragmentation,
     };
-    let blocks = model.get_blocks(&msa);
+    let blocks = model.get_blocks(&phylo.msa);
     let block_lens = get_block_lengths(&blocks);
 
     assert_eq!(blocks, vec![1, 2, 3, 7, 8, 9]);
@@ -363,7 +363,7 @@ fn tkf92_fixed_get_blocks() {
 #[cfg(test)]
 pub(super) fn setup_test_phylo(alphabet: &'static Alphabet) -> PhyloInfo<MASA> {
     let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    let msa = MASA::from_aligned_with_ancestral(
+    MASA::from_aligned_with_ancestral(
         Sequences::with_alphabet_unchecked(
             vec![
                 record!("A1", b"--GTGGA---"),
@@ -374,10 +374,9 @@ pub(super) fn setup_test_phylo(alphabet: &'static Alphabet) -> PhyloInfo<MASA> {
             ],
             alphabet,
         ),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[test]
@@ -906,13 +905,8 @@ fn tkf_indel_history_doesnt_change_felsenstein() {
         record!("C4", b"GTA-------"),
         record!("R5", b"--NNNNN---"),
     ]);
-    let msa1 = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
-    let msa2 = MASA::from_aligned_with_ancestral(seqs2, &tree).unwrap();
-    let phylo1 = PhyloInfo {
-        msa: msa1,
-        tree: tree.clone(),
-    };
-    let phylo2 = PhyloInfo { msa: msa2, tree };
+    let phylo1 = MASA::from_aligned_with_ancestral(seqs, tree.clone()).unwrap();
+    let phylo2 = MASA::from_aligned_with_ancestral(seqs2, tree).unwrap();
     let lambda = 0.1;
     let mu = 0.2;
     let r = 0.3;
@@ -1034,7 +1028,7 @@ fn tkf_modify_indel_model_params_costs_match() {
 #[test]
 fn tkf_update_tree() {
     let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    let msa = MASA::from_aligned_with_ancestral(
+    let phylo = MASA::from_aligned_with_ancestral(
         Sequences::new_unchecked(vec![
             record!("A1", b"--GTGGATGC"),
             record!("B2", b"--G----CGA"),
@@ -1042,10 +1036,9 @@ fn tkf_update_tree() {
             record!("C4", b"AGC-------"),
             record!("R5", b"--N-------"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let phylo = PhyloInfo { msa, tree };
     let subst_model = SubstModel::<GTR>::default();
     let lambda = 0.1;
     let mu = 0.2;
@@ -1080,7 +1073,7 @@ fn tkf_update_tree() {
 #[cfg(test)]
 fn setup_short_branches_phylo() -> PhyloInfo<MASA> {
     let tree = tree!("(((A1:1e-20,B2:2.0)I3:1e-16,C4:2.0)R5:0.0);");
-    let msa = MASA::from_aligned_with_ancestral(
+    MASA::from_aligned_with_ancestral(
         // Testing all events on short branches
         Sequences::new_unchecked(vec![
             record!("A1", b"-AA-AA"),
@@ -1089,10 +1082,9 @@ fn setup_short_branches_phylo() -> PhyloInfo<MASA> {
             record!("C4", b"-----A"),
             record!("R5", b"-----A"),
         ]),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[test]

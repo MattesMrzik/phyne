@@ -228,7 +228,7 @@ mod private_tests {
     use approx::assert_relative_eq;
 
     use crate::alignment::{Sequences, MASA};
-    use crate::phylo_info::{PhyloInfo, PhyloInfoBuilder};
+    use crate::phylo_info::PhyloInfoBuilder;
     use crate::tkf_model::TKF92IndelCostBuilder;
     use crate::{record_wo_desc as record, tree};
 
@@ -275,8 +275,7 @@ mod private_tests {
             record!("B1", b"-ARAAAW"),
             record!("I1", b"AAA---A"),
         ]);
-        let msa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
-        let phylo_info = PhyloInfo { msa, tree };
+        let phylo_info = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
         let lambda = 1.0;
         let mu = 1.1;
         let r = 0.5;
@@ -322,8 +321,7 @@ mod private_tests {
             record!("B1", b"-ARAAAW"),
             record!("I1", b"AAA---A"),
         ]);
-        let msa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
-        let phylo_info = PhyloInfo { msa, tree };
+        let phylo_info = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
         let lambda = 1.0;
         let mu = 1.1;
         let r = 0.5;

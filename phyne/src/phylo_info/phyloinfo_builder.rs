@@ -150,16 +150,16 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
         let sequences = self.read_sequences()?;
         let tree = self.setup_starting_tree(rng, &sequences)?;
 
-        let msa = if sequences.aligned {
+        let phylo = if sequences.aligned {
             info!("Sequences are aligned");
-            A::from_aligned(sequences, &tree)?
+            A::from_aligned(sequences, tree)?
         } else {
             info!("Sequences are not aligned, aligning");
             self.aligner
                 .unwrap_or(Box::new(ParsimonyAligner::default()))
-                .align(&sequences, &tree)?
+                .align(sequences, tree)?
         };
-        Ok(PhyloInfo { tree, msa })
+        Ok(phylo)
     }
 
     pub fn build_with_ancestors(self) -> Result<PhyloInfo<AA>> {
@@ -176,35 +176,35 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
         let sequences = self.read_sequences()?;
         let mut tree = self.setup_starting_tree(rng, &sequences)?;
 
-        let msa = if sequences.len() == tree.n {
-            tree = set_missing_tree_node_ids(&tree)?;
+        let phylo = if sequences.len() == tree.n {
+            set_missing_tree_node_ids(&mut tree)?;
             if sequences.aligned {
                 info!(
                     "Aligned sequences without ancestral sequences. Inferring ancestral sequences"
                 );
-                AA::from_aligned(sequences, &tree)
+                AA::from_aligned(sequences, tree)?
             } else {
                 info!("Sequences are not aligned, aligning");
-                let leaf_msa = self
+                let leaf_phylo = self
                     .aligner
                     .unwrap_or(Box::new(ParsimonyAligner::default()))
-                    .align(&sequences, &tree)?;
+                    .align(sequences, tree)?;
                 info!("Ancestral sequences are not provided, inferring them");
                 let asr = self.asr.unwrap_or(Box::new(ParsimonyPresenceAbsence {}));
-                asr.reconstruct_ancestral_seqs(&leaf_msa, &tree)
+                asr.reconstruct_ancestral_seqs(leaf_phylo)?
             }
         } else if sequences.len() == tree.len() {
             if sequences.aligned {
                 info!("Aligned sequences including ancestral sequences");
-                AA::from_aligned_with_ancestral(sequences, &tree)
+                AA::from_aligned_with_ancestral(sequences, tree)?
             } else {
                 bail!(AncestralAlignment, "building an ancestral alignment from unaligned sequences (including ancestral sequences) is not supported");
             }
         } else {
             bail!(Tree, "the number of sequences ({}) does not match the number of leaves ({}) nor the number of nodes ({}) in the tree", sequences.len(), tree.n, tree.len());
-        }?;
+        };
 
-        Ok(PhyloInfo { tree, msa })
+        Ok(phylo)
     }
 
     /// Reads starting tree from file, if provided, or runs NJ tree reconstruction
@@ -294,26 +294,29 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
 }
 
 /// Sets missing ids and bails if there are duplicates among the node ids that were already set.
-pub(crate) fn set_missing_tree_node_ids(tree: &Tree) -> Result<Tree> {
+pub(crate) fn set_missing_tree_node_ids(tree: &mut Tree) -> Result<()> {
+    // We want to take a &mut Tree and not take ownership, since in asr we take a PhyloInfo<A> where
+    // its tree might be missing internal nodes and we don't want to take the tree out of the
+    // PhyloInfo
     info!("Setting missing tree node ids");
-    let mut tree_with_all_ids = tree.clone();
     let mut seen_user_set_ids = HashSet::new();
     let mut count = 0;
-    for node_idx in tree.postorder() {
-        let id = tree.node_id(node_idx);
+    let nodes = tree.postorder().clone();
+    for node_idx in nodes {
+        let id = tree.node_id(&node_idx);
         if id.is_empty() {
             let mut new_id = format!("I{count}");
             while !seen_user_set_ids.insert(new_id.clone()) {
                 count += 1;
                 new_id = format!("I{count}");
             }
-            tree_with_all_ids.nodes[usize::from(node_idx)].id = new_id.clone();
+            tree.nodes[usize::from(node_idx)].id = new_id.clone();
             info!("Set missing id of node {node_idx} to {new_id}");
         } else if !seen_user_set_ids.insert(id.to_string()) {
             bail!(Tree, "duplicate node id ({id}) found in the tree");
         }
     }
-    Ok(tree_with_all_ids)
+    Ok(())
 }
 
 /// Checks that the IDs of the tree leaves and the sequences match, bails with an error otherwise.
@@ -437,10 +440,10 @@ mod private_tests {
     #[test]
     fn test_set_missing_tree_node_ids() {
         // arrange
-        let tree = tree!("((A1:1.0, B1:1.0) I1:1.0,(C2:1.0,(D3:1.0, E4:1.0) I9:1.0):1.0):1.0;");
+        let mut tree = tree!("((A1:1.0, B1:1.0) I1:1.0,(C2:1.0,(D3:1.0, E4:1.0) I9:1.0):1.0):1.0;");
 
         // act
-        let tree = set_missing_tree_node_ids(&tree).unwrap();
+        set_missing_tree_node_ids(&mut tree).unwrap();
 
         // assert
         let ids = tree
@@ -454,9 +457,9 @@ mod private_tests {
 
     #[test]
     fn set_missing_tree_node_ids_finds_duplicate() {
-        let tree = tree!("((A1:1.0, B1:1.0) I1:1.0,(C2:1.0,(D3:1.0, E4:1.0) I1:1.0):1.0):1.0;");
+        let mut tree = tree!("((A1:1.0, B1:1.0) I1:1.0,(C2:1.0,(D3:1.0, E4:1.0) I1:1.0):1.0):1.0;");
 
-        let error: Result<tree::Tree, Error> = set_missing_tree_node_ids(&tree);
+        let error = set_missing_tree_node_ids(&mut tree);
 
         assert_matches!(
             error,

@@ -6,24 +6,23 @@ use assert_matches::assert_matches;
 use crate::alignment::{Alignment, AncestralAlignment, Sequences, MASA, MSA};
 use crate::alphabets::{Alphabet, NUCLEOTIDES};
 use crate::io::read_sequences;
-use crate::phylo_info::{PhyloInfo, PhyloInfoBuilder as PIB};
+use crate::phylo_info::PhyloInfoBuilder as PIB;
 use crate::{frequencies, record_wo_desc as record, tree, Error};
 
 #[test]
 fn empirical_frequencies_easy() {
     let tree = tree!("(((A:2.0,B:2.0):0.3,C:2.0):0.4,D:2.0);");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"AAAAA"),
             record!("B", b"CCCCC"),
             record!("C", b"GGGGG"),
             record!("D", b"TTTTT"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { tree, msa };
-    let freqs = info.freqs();
+    let freqs = phylo.freqs();
     assert_eq!(freqs, frequencies!(&[0.25, 0.25, 0.25, 0.25]));
     assert_eq!(freqs.sum(), 1.0);
 }
@@ -31,19 +30,18 @@ fn empirical_frequencies_easy() {
 #[test]
 fn empirical_frequencies() {
     let tree = tree!("(((A:2.0,B:2.0):0.3,C:2.0):0.4,D:2.0);");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"TT"),
             record!("B", b"CA"),
             record!("C", b"NN"),
             record!("D", b"NN"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
 
-    let info = PhyloInfo { tree, msa };
-    let freqs = info.freqs();
+    let freqs = phylo.freqs();
     assert_eq!(
         freqs,
         frequencies!(&[3.0 / 8.0, 2.0 / 8.0, 2.0 / 8.0, 1.0 / 8.0])
@@ -208,18 +206,17 @@ fn check_phyloinfo_creation_newick_mismatch_ids() {
 #[test]
 fn check_empirical_frequencies() {
     let tree = tree!("((((A:2,B:2):1,C:2):1,D:2):0);");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"AAAAC"),
             record!("B", b"TTTCC"),
             record!("C", b"GGGCC"),
             record!("D", b"TTAAA"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { tree, msa };
-    let freqs = info.freqs();
+    let freqs = phylo.freqs();
     assert_eq!(freqs.clone().sum(), 1.0);
     assert_eq!(freqs, frequencies!(&[5.0, 5.0, 7.0, 3.0]).scale(1.0 / 20.0));
 }
@@ -227,53 +224,50 @@ fn check_empirical_frequencies() {
 #[test]
 fn empirical_frequencies_no_ambigs() {
     let tree = tree!("((one:2,two:2):1,(three:1,four:1):2);");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("one", b"CCCCCCCC"),
             record!("two", b"AAAAAAAA"),
             record!("three", b"TTTTTTTT"),
             record!("four", b"GGGGGGGG"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { tree, msa };
-    assert_relative_eq!(info.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
+    assert_relative_eq!(phylo.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
 }
 
 #[test]
 fn empirical_frequencies_ambig_x() {
     let tree = tree!("((on:2,tw:2):1,(th:1,fo:1):2);");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("on", b"XXXXXXXX"),
             record!("tw", b"XXXXXXXX"),
             record!("th", b"NNNNNNNN"),
             record!("fo", b"NNNNNNNN"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { tree, msa };
-    assert_relative_eq!(info.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
+    assert_relative_eq!(phylo.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
 }
 
 #[test]
 fn empirical_frequencies_ambig_n() {
     let tree = tree!("(((on:2,tw:2):1,th:1):4,fo:1);");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("on", b"AAAAAAAAAA"),
             record!("tw", b"XXXXXXXXXX"),
             record!("th", b"CCCCCCCCCC"),
             record!("fo", b"NNNNNNNNNN"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { tree, msa };
     assert_relative_eq!(
-        info.freqs(),
+        phylo.freqs(),
         frequencies!(&[0.125, 0.375, 0.375, 0.125]),
         epsilon = 1e-6
     );
@@ -282,45 +276,38 @@ fn empirical_frequencies_ambig_n() {
 #[test]
 fn empirical_frequencies_ambig_other() {
     let tree = tree!("(A:2,B:2):1.0;");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"VVVVVVVVVV"),
             record!("B", b"TTTTVVVTVV"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
+    assert_relative_eq!(phylo.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
 
-    let info = PhyloInfo {
-        tree: tree.clone(),
-        msa,
-    };
-    assert_relative_eq!(info.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
-
-    let msa = MSA::from_aligned(
+    let info = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"SSSSSSSSSSSSSSSSSSSS"),
             record!("B", b"WWWWWWWWWWWWWWWWWWWW"),
         ]),
-        &tree,
+        phylo.tree,
     )
     .unwrap();
-    let info = PhyloInfo { tree, msa };
     assert_relative_eq!(info.freqs(), frequencies!(&[0.25; 4]), epsilon = 1e-6);
 }
 
 #[test]
 fn empirical_frequencies_no_aas() {
     let tree = tree!("A:1.0;");
-    let msa = MSA::from_aligned(
+    let phylo = MSA::from_aligned(
         Sequences::new_unchecked(vec![record!("A", b"BBBBBBBBB")]),
-        &tree,
+        tree,
     )
     .unwrap();
 
-    let info = PhyloInfo { tree, msa };
     assert_relative_eq!(
-        info.freqs(),
+        phylo.freqs(),
         frequencies!(&[3.0 / 10.0, 3.0 / 10.0, 1.0 / 10.0, 3.0 / 10.0]),
         epsilon = 1e-6
     );
@@ -493,7 +480,7 @@ fn build_ancestral_alignment_from_unaligned_seqs() {
 #[test]
 fn masa_is_dollo() {
     let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    let msa = MASA::from_aligned_with_ancestral(
+    let phylo = MASA::from_aligned_with_ancestral(
         Sequences::new_unchecked(vec![
             record!("A1", b"--GTGGA---"),
             record!("B2", b"-------NNA"),
@@ -501,17 +488,16 @@ fn masa_is_dollo() {
             record!("C4", b"AGG-------"),
             record!("R5", b"--A-------"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let phylo = PhyloInfo { msa, tree };
     assert!(phylo.check_dollos_constraint().is_ok());
 }
 
 #[test]
 fn masa_is_not_dollo() {
     let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    let msa = MASA::from_aligned_with_ancestral(
+    let phylo = MASA::from_aligned_with_ancestral(
         Sequences::new_unchecked(vec![
             record!("A1", b"--GTGGA---"),
             record!("B2", b"------ANNA"),
@@ -519,10 +505,9 @@ fn masa_is_not_dollo() {
             record!("C4", b"AGG---NN--"),
             record!("R5", b"--A-------"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let phylo = PhyloInfo { msa, tree };
     let err_msg = phylo.check_dollos_constraint().unwrap_err().to_string();
     assert!(err_msg.contains("Column 6: 2 insertions"));
     assert!(err_msg.contains("Column 7: 2 insertions"));

@@ -107,7 +107,6 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     ///
     /// # Example
     /// ```rust
-    /// use phyne::phylo_info::PhyloInfo;
     /// use phyne::substitution_models::{SubstModel, dna_models::GTR};
     /// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
     /// use phyne::tkf_model::TKF92CostBuilder;
@@ -116,7 +115,7 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     /// # use phyne::Result;
     /// # fn main() -> Result<()> {
     /// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    /// let msa = MASA::from_aligned_with_ancestral(
+    /// let phylo = MASA::from_aligned_with_ancestral(
     ///     Sequences::new(
     ///         vec![
     ///             record!("A1", b"--GTGGA---"),
@@ -126,9 +125,8 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     ///             record!("R5", b"--A-------"),
     ///            ],
     ///     )?,
-    ///   &tree,
+    ///   tree,
     /// )?;
-    /// let phylo = PhyloInfo { msa, tree };
     /// let subst_model = SubstModel::<GTR>::default();
     /// let cost = TKF92CostBuilder::new(&[0.4, 0.5, 0.8], subst_model, phylo).build()?;
     /// assert_eq!(cost.masa().seqs().len(), 3);
@@ -142,7 +140,6 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     ///
     /// # Example
     /// ```rust
-    /// use phyne::phylo_info::PhyloInfo;
     /// use phyne::substitution_models::{SubstModel, dna_models::GTR};
     /// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
     /// use phyne::tkf_model::TKF92CostBuilder;
@@ -151,7 +148,7 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     /// # use phyne::Result;
     /// # fn main() -> Result<()> {
     /// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    /// let msa = MASA::from_aligned_with_ancestral(
+    /// let phylo = MASA::from_aligned_with_ancestral(
     ///     Sequences::new(
     ///         vec![
     ///             record!("A1", b"--GTGGA---"),
@@ -161,9 +158,8 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     ///             record!("R5", b"--A-------"),
     ///            ],
     ///     )?,
-    ///   &tree,
+    ///   tree,
     /// )?;
-    /// let phylo = PhyloInfo { msa, tree };
     /// let subst_model = SubstModel::<GTR>::default();
     /// let cost = TKF92CostBuilder::new(&[0.4, 0.5, 0.8], subst_model, phylo).build()?;
     /// // under the TKF92 model the blocks are the positions in the alignment where there is

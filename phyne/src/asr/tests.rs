@@ -3,26 +3,24 @@ use assert_matches::assert_matches;
 use crate::alignment::{Alignment, Sequences, MASA, MSA};
 use crate::asr::AncestralSequenceReconstruction;
 use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
-use crate::{record, tree, Error};
+use crate::phylo_info::PhyloInfo;
+use crate::{record_wo_desc as record, tree, Error, Result};
 
 #[test]
-fn reconstruct_ancestral_seqs_n_seqs_not_same_as_leaves() {
-    let tree = tree!("root:1.0;");
-    let seqs =
-        Sequences::new_unchecked(vec![record!("root", Some("seq with 4 nucls"), b"AA--AAA")]);
-    let msa = MSA::from_aligned(seqs, &tree).unwrap();
-    let wrong_tree =
-        tree!("((A0:1.0, B1:1.0) I5:1.0,(C2:1.0,(D3:1.0, E4:1.0) I9:1.0) I7:1.0) I8:1.0;");
+fn reconstruct_ancestral_seqs_invalid_internal_ids() {
+    let tree = tree!("((A:1.0, B:1.0)I:1.0,C:1.0)I:1.0;");
+    let seqs = Sequences::new_unchecked(vec![
+        record!("A", b"AA--AAA"),
+        record!("B", b"AA-AAAG"),
+        record!("C", b"AAAAA-A"),
+    ]);
+    let phylo = MSA::from_aligned(seqs, tree).unwrap();
     let asr = ParsimonyPresenceAbsence {};
 
-    let err = AncestralSequenceReconstruction::<MSA, MASA>::reconstruct_ancestral_seqs(
-        &asr,
-        &msa,
-        &wrong_tree,
-    );
+    let err: Result<PhyloInfo<MASA>> = asr.reconstruct_ancestral_seqs(phylo);
 
     assert_matches!(
         err,
-        Err(Error::AncestralAlignment(msg)) if msg.contains("but tree has")
+        Err(Error::Tree(msg)) if msg.contains("duplicate node id (I)")
     );
 }

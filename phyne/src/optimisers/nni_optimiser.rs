@@ -160,7 +160,6 @@ mod private_nni_tests {
 
     use super::*;
     use crate::alignment::{Alignment, Sequences, MSA};
-    use crate::phylo_info::PhyloInfo;
     use crate::substitution_models::{SubstModel, SubstitutionCostBuilder as SCB, JC69};
     use crate::tree::Tree;
     use crate::{record_wo_desc as record, tree, Error};
@@ -276,8 +275,7 @@ mod private_nni_tests {
             record!("B1", b"---A"),
             record!("C2", b"AA--"),
         ]);
-        let msa = MSA::from_aligned(seqs, &tree).unwrap();
-        let info = PhyloInfo { msa, tree };
+        let info = MSA::from_aligned(seqs, tree).unwrap();
         let node_id = "A0";
 
         let cost = SCB::new(SubstModel::<JC69>::default(), info)
@@ -301,8 +299,7 @@ mod private_nni_tests {
             record!("C2", b"AA--"),
             record!("D3", b"AA--"),
         ]);
-        let msa = MSA::from_aligned(seqs, &tree).unwrap();
-        let info = PhyloInfo { msa, tree };
+        let info = MSA::from_aligned(seqs, tree).unwrap();
         let node_id = "I1";
 
         let cost = SCB::new(SubstModel::<JC69>::default(), info)
