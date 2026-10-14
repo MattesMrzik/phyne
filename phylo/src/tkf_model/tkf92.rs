@@ -4,11 +4,13 @@ use std::fmt::Display;
 use hashbrown::HashSet;
 use log::warn;
 use num_enum::{FromPrimitive, IntoPrimitive};
-use rand_distr::{Distribution, Geometric};
+use rand::{Rng, SeedableRng};
+use rand_distr::Geometric;
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
+use crate::random::RandomGenerator;
 use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCostBuilder as SCB};
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
@@ -41,6 +43,9 @@ impl TKF92IndelModel {
         self.params[usize::from(TKF92Parameters::R)]
     }
 
+    /// Creates a new TKF92 indel model with the given insertion rate `lambda`, deletion rate
+    /// `mu` and fragment length parameter `r`. Invalid parameters are replaced by their defaults
+    /// ([`DEFAULT_LAMBDA`], [`DEFAULT_MU`], [`DEFAULT_R`]) with a warning.
     pub fn new(lambda: f64, mu: f64, r: f64) -> Self {
         let mut params = vec![lambda, mu, r];
         validate_lambda_mu(&mut params);
@@ -147,10 +152,13 @@ impl FragmentSampler for TKF92IndelModel {
     /// `r` is the probability that the next residue continues the current fragment,
     /// so `1 - r` is the stopping (success) probability of the geometric draw.
     /// Returns `(length, log_probability)`.
-    fn sample_fragment_length<R: rand::Rng>(&self, rng: &mut R) -> (usize, f64) {
+    fn sample_fragment_length<R: Rng + SeedableRng>(
+        &self,
+        rng: &mut RandomGenerator<R>,
+    ) -> (usize, f64) {
         let prob_of_success = 1.0 - self.r();
         let geom = Geometric::new(prob_of_success).unwrap();
-        let choice = geom.sample(rng);
+        let choice = rng.sample(&geom);
         // Geometric PMF: (1-p)^k * p  where k = number of failures before first success
         let log_prob = (choice as f64) * (1.0 - prob_of_success).ln() + prob_of_success.ln();
         (choice as usize + 1, log_prob) // +1: every fragment has at least one character

@@ -630,21 +630,22 @@ fn into_alignment_masa_to_msa() {
     // columns 2 and 5 are only gaps, so they are removed during the creation
     assert_eq!(masa.len(), 5);
 
-    let msa: MSA = masa.into_alignment(&tree);
+    let phylo = PhyloInfo { msa: masa, tree };
+    let phylo: PhyloInfo<MSA> = phylo.discard_ancestral_seqs();
 
-    assert_eq!(msa.seq_count(), 3);
+    assert_eq!(phylo.msa.seq_count(), 3);
     // column 3 is only gaps in the leaf sequences, so it is removed during the transformation
-    assert_eq!(msa.len(), 4);
+    assert_eq!(phylo.msa.len(), 4);
 
-    assert_eq!(msa.seqs().record_by_id("A").seq(), b"ACT");
-    assert_eq!(msa.seqs().record_by_id("B").seq(), b"CGT");
-    assert_eq!(msa.seqs().record_by_id("C").seq(), b"AT");
+    assert_eq!(phylo.msa.seqs().record_by_id("A").seq(), b"ACT");
+    assert_eq!(phylo.msa.seqs().record_by_id("B").seq(), b"CGT");
+    assert_eq!(phylo.msa.seqs().record_by_id("C").seq(), b"AT");
 
-    let a_idx = tree.idx("A");
-    let b_idx = tree.idx("B");
-    let c_idx = tree.idx("C");
+    let a_idx = phylo.tree.idx("A");
+    let b_idx = phylo.tree.idx("B");
+    let c_idx = phylo.tree.idx("C");
 
-    assert_eq!(msa.leaf_map(&a_idx), &align!(b"A-CT"));
-    assert_eq!(msa.leaf_map(&b_idx), &align!(b"-CGT"));
-    assert_eq!(msa.leaf_map(&c_idx), &align!(b"A--T"));
+    assert_eq!(phylo.msa.leaf_map(&a_idx), &align!(b"A-CT"));
+    assert_eq!(phylo.msa.leaf_map(&b_idx), &align!(b"-CGT"));
+    assert_eq!(phylo.msa.leaf_map(&c_idx), &align!(b"A--T"));
 }

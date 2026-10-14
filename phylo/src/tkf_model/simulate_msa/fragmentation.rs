@@ -1,5 +1,16 @@
-use crate::{alignment::AncestralAlignment, bail, tkf_model::blocks_of_alignment, Result};
+use fixedbitset::FixedBitSet;
 
+use crate::alignment::AncestralAlignment;
+use crate::tkf_model::blocks_of_alignment;
+use crate::{bail, Result};
+
+/// The fragmentation of an alignment.
+///
+/// Under the TKF model, an alignment is naturally partitioned into fragments.
+/// This struct stores the right-exclusive boundaries of those fragments.
+/// There is no public constructor: a `Fragmentation` is obtained from a
+/// simulation result (see [`TKFSimulationResult`](`crate::tkf_model::simulate_msa::TKFSimulationResult`))
+/// and is always kept in sync with the alignment.
 #[derive(Clone, Debug)]
 pub struct Fragmentation {
     right_exclusive_boundaries: Vec<usize>,
@@ -36,10 +47,17 @@ impl Fragmentation {
         self.right_exclusive_boundaries.len()
     }
 
+    /// Returns whether the fragmentation is empty, i.e., whether the alignment has no columns.
     pub fn is_empty(&self) -> bool {
         self.right_exclusive_boundaries.is_empty()
     }
 
+    /// Checks whether the fragmentation is consistent with the given ancestral alignment.
+    /// * If the fragmentation is empty, the alignment must also be empty.
+    /// * The last fragment boundary must be equal to the alignment length.
+    /// * All fragment boundaries must be present in the alignment's block boundaries.
+    ///
+    /// This indicated a critical failure
     pub(super) fn fragmentation_works_with_ancestral_alignment<AA: AncestralAlignment>(
         &self,
         masa: &AA,
@@ -73,7 +91,9 @@ impl Fragmentation {
     /// columns that were removed from the alignment from the fragmentation, so that it is in sync
     /// again.
     /// Is used in [`TKFSimulationResult::remove_extinct_columns`](`crate::tkf_model::simulate_msa::TKFSimulationResult::remove_extinct_columns`).
-    pub(super) fn remove_cols(&mut self, keep_col_mask: &[bool]) -> Result<()> {
+    /// The mask is a [`FixedBitSet`] over the original alignment columns, where a set bit indicates a
+    /// column that was kept and an unset bit a column that was removed.
+    pub(super) fn remove_cols(&mut self, keep_col_mask: &FixedBitSet) -> Result<()> {
         if self.is_empty() {
             if keep_col_mask.is_empty() {
                 return Ok(());
@@ -89,11 +109,11 @@ impl Fragmentation {
             bail!(Tkf, "fragmentation does not match alignment length")
         }
         for frag_border in self.right_exclusive_boundaries.iter() {
-            let mask_slice = &keep_col_mask[prev_border..*frag_border];
-            if mask_slice.iter().all(|&b| !b) {
-                removed_so_far += mask_slice.len();
+            let fragment_range = prev_border..*frag_border;
+            if !keep_col_mask.contains_any_in_range(fragment_range.clone()) {
+                removed_so_far += fragment_range.len();
                 // not keep ie remove
-            } else if mask_slice.iter().all(|&b| b) {
+            } else if keep_col_mask.contains_all_in_range(fragment_range) {
                 // keep
                 new_fragmentation.push(*frag_border - removed_so_far);
             } else {
@@ -114,6 +134,7 @@ mod private_tests {
     use super::*;
     use crate::Error::Tkf;
     use assert_matches::assert_matches;
+    use fixedbitset::FixedBitSet;
     use rstest::*;
 
     #[rstest]
@@ -136,7 +157,7 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_no_removals() {
         let mut fragmentation = Fragmentation::new(vec![3, 6, 9]).unwrap();
-        let keep_cols_mask = vec![true; 9];
+        let keep_cols_mask = (0..9).collect::<FixedBitSet>();
         fragmentation.remove_cols(&keep_cols_mask).unwrap();
         assert_eq!(fragmentation.right_exclusive_boundaries(), vec![3, 6, 9]);
     }
@@ -144,7 +165,7 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_all_removals() {
         let mut fragmentation = Fragmentation::new(vec![3, 6, 9]).unwrap();
-        let keep_cols_mask = vec![false; 9];
+        let keep_cols_mask = FixedBitSet::with_capacity(9);
         fragmentation.remove_cols(&keep_cols_mask).unwrap();
         assert_eq!(
             fragmentation.right_exclusive_boundaries(),
@@ -155,9 +176,7 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_first_removed() {
         let mut fragmentation = Fragmentation::new(vec![3, 7, 12]).unwrap();
-        let keep_cols_mask = vec![
-            false, false, false, true, true, true, true, true, true, true, true, true,
-        ];
+        let keep_cols_mask = (3..12).collect::<FixedBitSet>();
         fragmentation.remove_cols(&keep_cols_mask).unwrap();
         assert_eq!(fragmentation.right_exclusive_boundaries(), vec![4, 9]);
     }
@@ -165,9 +184,7 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_middle_removed() {
         let mut fragmentation = Fragmentation::new(vec![3, 7, 12]).unwrap();
-        let keep_cols_mask = vec![
-            true, true, true, false, false, false, false, true, true, true, true, true,
-        ];
+        let keep_cols_mask = (0..3).chain(7..12).collect::<FixedBitSet>();
         fragmentation.remove_cols(&keep_cols_mask).unwrap();
         assert_eq!(fragmentation.right_exclusive_boundaries(), vec![3, 8]);
     }
@@ -175,9 +192,8 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_last_removed() {
         let mut fragmentation = Fragmentation::new(vec![3, 7, 12]).unwrap();
-        let keep_cols_mask = vec![
-            true, true, true, true, true, true, true, false, false, false, false, false,
-        ];
+        let mut keep_cols_mask = FixedBitSet::with_capacity(12);
+        keep_cols_mask.extend(0..7);
         fragmentation.remove_cols(&keep_cols_mask).unwrap();
         assert_eq!(fragmentation.right_exclusive_boundaries(), vec![3, 7]);
     }
@@ -185,10 +201,7 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_larger_example() {
         let mut fragmentation = Fragmentation::new(vec![1, 3, 6, 10, 15, 21]).unwrap();
-        let keep_cols_mask = vec![
-            false, false, false, true, true, true, false, false, false, false, false, false, false,
-            false, false, true, true, true, true, true, true,
-        ];
+        let keep_cols_mask = (3..6).chain(15..21).collect::<FixedBitSet>();
         fragmentation.remove_cols(&keep_cols_mask).unwrap();
         assert_eq!(fragmentation.right_exclusive_boundaries(), vec![3, 9]);
     }
@@ -196,7 +209,7 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_empty_fragmentation() {
         let mut fragmentation = Fragmentation::new(vec![]).unwrap();
-        let keep_cols_mask = vec![true, true, true];
+        let keep_cols_mask = (0..3).collect::<FixedBitSet>();
         let err = fragmentation.remove_cols(&keep_cols_mask);
         assert_matches!(err.unwrap_err(), Tkf(msg) if msg.contains("fragmentation and alignment do not match in emptiness"));
     }
@@ -204,15 +217,15 @@ mod private_tests {
     #[test]
     fn remove_cols_from_fragmentation_mismatched_lens() {
         let mut fragmentation = Fragmentation::new(vec![3, 6, 9]).unwrap();
-        let keep_cols_mask = vec![true, true, true, true, true, true, true, true]; // length 8 instead of 9
+        let keep_cols_mask = (0..8).collect::<FixedBitSet>(); // length 8 instead of 9
         let err = fragmentation.remove_cols(&keep_cols_mask);
         assert_matches!(err.unwrap_err(), Tkf(msg) if msg.contains("fragmentation does not match alignment length"));
     }
 
     #[rstest]
-    #[case(vec![true, false, true, true, true, true, true, true, true])]
-    #[case(vec![false, false, true, true, true, true, true, false, true])]
-    fn remove_cols_from_fragmentation_mask_does_not_match(#[case] keep_cols_mask: Vec<bool>) {
+    #[case((0..1).chain(2..9).collect::<FixedBitSet>())]
+    #[case((2..7).chain(8..9).collect::<FixedBitSet>())]
+    fn remove_cols_from_fragmentation_mask_does_not_match(#[case] keep_cols_mask: FixedBitSet) {
         let mut fragmentation = Fragmentation::new(vec![3, 6, 9]).unwrap();
         let err = fragmentation.remove_cols(&keep_cols_mask);
         assert_matches!(err.unwrap_err(), Tkf(msg) if msg.contains("mask does not match fragmentation"));

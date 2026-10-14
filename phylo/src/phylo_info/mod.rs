@@ -1,15 +1,16 @@
 use bio::io::fasta::Record;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
 use crate::alignment::{
     Alignment, AncestralAlignment, InternalAlignments, Mapping, SeqMaps, Sequences,
 };
 use crate::substitution_models::FreqVector;
+use crate::tree::tree_parser::from_newick;
 use crate::tree::{
     NodeIdx::{self, Internal, Leaf},
     Tree,
 };
-use crate::{aligned_seq, bail, Result};
+use crate::{aligned_seq, bail, record, Result, REPORT_ISSUES_URL};
 
 mod phyloinfo_builder;
 pub use phyloinfo_builder::*;
@@ -194,6 +195,230 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
         }
         Ok(())
     }
+
+    pub fn discard_ancestral_seqs<A: Alignment>(self) -> PhyloInfo<A> {
+        let mut leaf_records = Vec::with_capacity(self.msa.leaf_maps().len());
+        for (node_idx, map) in self.msa.leaf_maps() {
+            let id = self.tree.node_id(node_idx);
+            let unaligned_record = self.msa.seqs().record_by_id(id);
+            let desc = unaligned_record.desc();
+            let aligned_seq = aligned_seq!(map, unaligned_record.seq());
+            let new_record = record!(id, desc, &aligned_seq);
+            leaf_records.push(new_record);
+        }
+        let mut seqs = Sequences::with_alphabet_unchecked(leaf_records, self.msa.seqs().alphabet());
+        seqs.remove_gap_cols();
+        PhyloInfo {
+            msa: A::from_aligned_unchecked(seqs, &self.tree),
+            tree: self.tree,
+        }
+    }
+
+    /// Removes leaves whose aligned sequence consists only of gaps from both the tree and the
+    /// alignment, collapsing single-child nodes that arise.
+    ///
+    /// # Errors
+    /// * If pruning would leave fewer than two sequences with characters, which is not a
+    ///   meaningful tree.
+    pub fn prune_empty_leaves(&mut self) -> Result<()> {
+        // Collect the leaves whose aligned sequence consists only of gaps. For each of them
+        // the parent node is also removed from the MASA when the tree is pruned.
+        let leaves_to_remove = self.all_gap_leaves();
+        if leaves_to_remove.is_empty() {
+            return Ok(());
+        }
+        if self.tree.n - leaves_to_remove.len() < 2 {
+            bail!(
+                Alignment,
+                "pruning empty leaves would leave fewer than two sequences with characters which is not a meaningful tree"
+            );
+        }
+
+        let aligned = self.aligned_seqs();
+        // TODO: take ownership of the tree and dont pass by ref
+        let pruned_tree = prune_empty_leaves_from_tree(&self.tree, &leaves_to_remove)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Pruning empty leaves failed: {e}. This is a bug, please report it at {REPORT_ISSUES_URL}",
+                )
+            });
+        let original_len = self.msa.len();
+        let masa: AA = rebuild_masa(&aligned, &pruned_tree).unwrap_or_else(|e| {
+            panic!(
+                "Rebuilding MASA after pruning empty leaves failed: {e}. \
+                 This is a bug, please report it at {REPORT_ISSUES_URL}",
+            )
+        });
+        debug_assert_eq!(masa.len(), original_len);
+        self.tree = pruned_tree;
+        self.msa = masa;
+        // Pruning only removes rows, not columns, so the fragmentation stays in sync.
+        Ok(())
+    }
+
+    /// Returns the leaves whose aligned sequence consists only of gaps.
+    fn all_gap_leaves(&self) -> HashSet<NodeIdx> {
+        self.tree
+            .preorder()
+            .iter()
+            .filter_map(|node_idx| match node_idx {
+                Leaf(_)
+                    if self
+                        .msa
+                        .leaf_map(node_idx)
+                        .iter()
+                        .all(|site| site.is_none()) =>
+                {
+                    Some(*node_idx)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Returns all sequences (leaf and ancestral) in aligned form, mirroring
+    /// [`Display`](`std::fmt::Display`) for MASA. Node ids are resolved through the tree,
+    /// since `idx_to_id` is private to the alignment module.
+    fn aligned_seqs(&self) -> Sequences {
+        let both_maps = self
+            .msa
+            .leaf_maps()
+            .iter()
+            .chain(self.msa.ancestral_maps().iter());
+        let records = both_maps
+            .map(|(node_idx, seq_map)| {
+                let id = self.tree.node_id(node_idx);
+                let record = match node_idx {
+                    Internal(_) => self.msa.ancestral_seqs().record_by_id(id),
+                    Leaf(_) => self.msa.seqs().record_by_id(id),
+                };
+                let aligned = crate::aligned_seq!(seq_map, record.seq());
+                crate::record!(id, record.desc(), &aligned)
+            })
+            .collect();
+        Sequences::with_alphabet_unchecked(records, self.msa.seqs().alphabet())
+    }
+}
+
+/// Removes the given leaves from the tree, collapsing any single-child nodes that arise
+/// and transferring their branch length to the surviving child. Also collapses the root if
+/// it ends up with a single child.
+///
+/// After calling this function, make sure to call [`rebuild_masa`] to keep the alignment in sync
+/// with the pruned tree.
+///
+/// # Errors
+/// * If any of the given nodes is not a leaf.
+/// * If removing yields a tree with fewer than two leaves.
+/// * Something went wrong while removing a leaf or collapsing the root, which should not happen less there is a bug.
+fn prune_empty_leaves_from_tree(tree: &Tree, leaves_to_remove: &HashSet<NodeIdx>) -> Result<Tree> {
+    let mut pruned = tree.clone();
+    for leaf_idx in leaves_to_remove {
+        remove_leaf(&mut pruned, leaf_idx)?;
+    }
+    collapse_root(&mut pruned);
+    rebuild_tree(&pruned)
+}
+
+/// Deletes a leaf from the tree, collapsing its parent (transferring the parent's branch
+/// length to the surviving child). The root, if left with a single child, is collapsed by
+/// [`collapse_root`]. Relies on the tree being binary.
+///
+/// After calling this function, make sure to call [`collapse_root`] and then [`rebuild_tree`] to
+/// get a clean tree with correct internal fields and indices.
+///
+/// # Errors
+/// * If the given node is not a leaf.
+/// * If the given leaf is the only node of the tree.
+fn remove_leaf(tree: &mut Tree, leaf_idx: &NodeIdx) -> Result<()> {
+    if !matches!(leaf_idx, Leaf(_)) {
+        bail!(
+            Tree,
+            "cannot prune node '{}', it is not a leaf",
+            tree.node(leaf_idx).id
+        );
+    }
+    let parent = match tree.parent(leaf_idx) {
+        Some(parent) => parent,
+        None => bail!(
+            Tree,
+            "cannot prune leaf '{}', it is the only node of the tree",
+            tree.node(leaf_idx).id
+        ),
+    };
+    // Disconnect the leaf from its parent
+    tree.node_mut(&parent)
+        .children
+        .retain(|child| child != leaf_idx);
+
+    // In a binary tree the parent of a pruned leaf is left with exactly one child;
+    // collapse it and transfer its branch length to the surviving child.
+    if parent != tree.root {
+        debug_assert_eq!(tree.node(&parent).children.len(), 1);
+        let grandparent = tree.node(&parent).parent.unwrap();
+        let child = tree.node(&parent).children[0];
+        let parent_blen = tree.node(&parent).blen;
+        {
+            let child_node = tree.node_mut(&child);
+            child_node.blen += parent_blen;
+            child_node.parent = Some(grandparent);
+        }
+        {
+            let grandparent_node = tree.node_mut(&grandparent);
+            grandparent_node.children.retain(|c| *c != parent);
+            grandparent_node.children.push(child);
+        }
+    }
+    Ok(())
+}
+
+/// Collapses the root if it has only a single child, transferring its branch length to that child
+/// which then becomes the new root. Loops until the root has more than one child or is a leaf.
+fn collapse_root(tree: &mut Tree) {
+    loop {
+        let children = tree.children(&tree.root).clone();
+        match children.len() {
+            1 => {
+                let child = children[0];
+                let root_blen = tree.node(&tree.root).blen;
+                {
+                    let child_node = tree.node_mut(&child);
+                    child_node.blen += root_blen;
+                    child_node.parent = None;
+                }
+                tree.root = child;
+            }
+            _ => break,
+        }
+    }
+}
+
+/// Rebuilds a clean tree from a (possibly mutated) tree, dropping any nodes that are no
+/// longer connected to the root. Serialization to Newick and re-parsing re-computes all
+/// indices, leaf ids, and traversals.
+///
+/// You should call [`rebuild_masa`] after this to keep the alignment in sync with the rebuilt tree.
+fn rebuild_tree(pruned: &Tree) -> Result<Tree> {
+    let newick = pruned.to_newick();
+    // TODO: this does reallocation, could also work on the vecs in place
+    let mut trees = from_newick(&newick)?;
+    debug_assert_eq!(trees.len(), 1);
+    Ok(trees.pop().unwrap())
+}
+
+/// Rebuilds an ancestral alignment that only contains the nodes of the new (pruned) tree,
+/// keeping the aligned sequences of the remaining nodes. Columns are left untouched.
+fn rebuild_masa<AA: AncestralAlignment>(aligned: &Sequences, new_tree: &Tree) -> Result<AA> {
+    // We first must get the aligned seqs since just by using the new_tree and the original masa
+    // we cannot have access to the mappings as they are indexed through idx of the original tree.
+    let records: Vec<Record> = aligned
+        .into_iter()
+        .filter(|record| new_tree.try_idx(record.id()).is_ok())
+        .cloned()
+        .collect();
+    let seqs = Sequences::with_alphabet(records, aligned.alphabet())?;
+    validate_ids_with_ancestors(new_tree, &seqs)?;
+    Ok(AA::from_aligned_with_ancestral_unchecked(seqs, new_tree))
 }
 
 #[cfg(test)]

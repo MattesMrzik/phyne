@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display};
 
+use fixedbitset::FixedBitSet;
 use hashbrown::HashMap;
 use itertools::Itertools;
 use log::warn;
@@ -8,7 +9,7 @@ use crate::alphabets::{Alphabet, AMB_CHAR};
 use crate::asr::AncestralSequenceReconstruction;
 use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
 use crate::phylo_info::{
-    set_missing_tree_node_ids, validate_ids_with_ancestors, validate_taxa_ids,
+    set_missing_tree_node_ids, validate_ids_with_ancestors, validate_taxa_ids, PhyloInfo,
 };
 use crate::tree::{NodeIdx, NodeIdx::Internal, NodeIdx::Leaf, Tree};
 use crate::{align, aligned_seq, bail, record, Result, REPORT_ISSUES_URL};
@@ -126,10 +127,9 @@ pub trait AncestralAlignment: Alignment {
         validate_ids_with_ancestors(tree, &all_seqs)?;
         all_seqs.remove_gap_cols();
         let ancestral_alignment = Self::from_aligned_with_ancestral_unchecked(all_seqs, tree);
-        let extinct_cols: Vec<usize> = surviving_columns_mask(&ancestral_alignment)
-            .iter()
-            .enumerate()
-            .filter_map(|(col_idx, survives)| (!survives).then_some(col_idx))
+        let surviving = surviving_columns_mask(&ancestral_alignment);
+        let extinct_cols: Vec<usize> = (0..ancestral_alignment.len())
+            .filter(|&col_idx| !surviving.contains(col_idx))
             .collect();
         if !extinct_cols.is_empty() {
             warn!(
@@ -144,27 +144,16 @@ pub trait AncestralAlignment: Alignment {
     /// by the default implementation of [`Self::from_aligned_with_ancestral`].
     fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: &Tree) -> Self;
     /// Removes columns from the alignment where the ancestral character goes extinct, i.e. columns
-    /// where all leaf sequences have a gap and returns a boolean mask indicating which columns were
-    /// removed, ie `true` for columns that were kept and `false` for columns that were removed.
-    fn remove_extinct_columns(&mut self) -> Vec<bool>;
-    /// Transforms self into a regular alignment, i.e., without ancestral sequences.
-    fn into_alignment<A: Alignment>(self, tree: &Tree) -> A {
-        let mut leaf_records = Vec::with_capacity(self.leaf_maps().len());
-        for (node_idx, map) in self.leaf_maps() {
-            let id = tree.node_id(node_idx);
-            let unaligned_record = self.seqs().record_by_id(id);
-            let desc = unaligned_record.desc();
-            let aligned_seq = aligned_seq!(map, unaligned_record.seq());
-            let new_record = record!(id, desc, &aligned_seq);
-            leaf_records.push(new_record);
-        }
-        let mut seqs = Sequences::with_alphabet_unchecked(leaf_records, self.seqs().alphabet());
-        seqs.remove_gap_cols();
-        A::from_aligned_unchecked(seqs, tree)
-    }
+    /// where all leaf sequences have a gap. Returns a [`FixedBitSet`] mask over the original
+    /// alignment columns, where a set bit indicates a column that was kept and an unset bit a column
+    /// that was removed.
+    //
+    //TODO: perhaps split thin into a method that determines the mask, and another that (internally
+    //calls the first) and removes the columns
+    fn remove_extinct_columns(&mut self);
 }
 
-/// Returns a boolean mask over alignment columns indicating which do not go extinct,
+/// Returns a [`FixedBitSet`] mask over alignment columns indicating which do not go extinct,
 /// i.e. have at least one non-`None` site across all leaf sequences.
 ///
 /// # Example
@@ -186,15 +175,16 @@ pub trait AncestralAlignment: Alignment {
 ///
 /// // column 0 only has characters in the ancestral sequences and thus goes extinct
 /// // column 1 only has gaps, so gets removed on alignment construction
-/// assert_eq!(surviving_columns_mask(&masa), vec![false,  true, true]);
+/// // columns 1 and 2 survive, so the mask has set bits at indices 1 and 2
+/// assert_eq!(surviving_columns_mask(&masa).ones().collect::<Vec<_>>(), vec![1, 2]);
 /// # Ok(()) }
 /// ```
-pub fn surviving_columns_mask(ancestral_alignment: &impl AncestralAlignment) -> Vec<bool> {
-    let mut surviving = vec![false; ancestral_alignment.len()];
+pub fn surviving_columns_mask(ancestral_alignment: &impl AncestralAlignment) -> FixedBitSet {
+    let mut surviving = FixedBitSet::with_capacity(ancestral_alignment.len());
     for map in ancestral_alignment.leaf_maps().values() {
         for (col_idx, site) in map.iter().enumerate() {
             if site.is_some() {
-                surviving[col_idx] = true;
+                surviving.insert(col_idx);
             }
         }
     }
@@ -649,14 +639,17 @@ impl AncestralAlignment for MASA {
         }
     }
 
-    fn remove_extinct_columns(&mut self) -> Vec<bool> {
+    /// TODO: add a doc string with Example
+    /// remove the return type
+    /// and just call the surviving_columns_mask  in the update fragmentation
+    fn remove_extinct_columns(&mut self) {
         // Determine columns where the ancestral character did not go extinct
         let keep_cols = surviving_columns_mask(self);
         // If no character goes extinct, we don't have to update the alignment
-        if keep_cols.iter().all(|b| *b) {
-            return keep_cols;
+        if keep_cols.is_full() {
+            return;
         }
-        if keep_cols.iter().all(|b| !*b) {
+        if keep_cols.is_clear() {
             warn!(
                 "All columns go extinct in all leaf sequences. \
                 The resulting alignment after this call to remove_extinct_columns() will be empty."
@@ -677,13 +670,9 @@ impl AncestralAlignment for MASA {
             let original_seq = original_record.seq();
 
             let mut new_seq = Vec::with_capacity(original_seq.len());
-            let mut new_map_vec = Vec::with_capacity(keep_cols.len());
+            let mut new_map_vec = Vec::with_capacity(keep_cols.count_ones(..));
 
-            for (col_idx, &keep) in keep_cols.iter().enumerate() {
-                if !keep {
-                    continue;
-                }
-
+            for col_idx in keep_cols.ones() {
                 if let Some(pos) = map[col_idx] {
                     new_map_vec.push(Some(new_seq.len()));
                     new_seq.push(original_seq[pos]);
@@ -706,8 +695,6 @@ impl AncestralAlignment for MASA {
                 )
             });
         }
-
-        keep_cols
     }
 }
 
@@ -755,19 +742,26 @@ impl MASA {
     }
 }
 
+/// Simulates MSAs along a tree.
+///
+/// Implementors simulate sequences down a [`Tree`] according to some evolutionary model
+/// (e.g. substitutions only, or a full TKF indel + substitution process) and can produce
+/// either an ancestral alignment or an alignment of only the leaf sequences.
 pub trait AlignmentSimulation {
     /// Simulates an ancestral alignment, i.e. an alignment that also contains sequences for
     /// the ancestral nodes of the tree. By pure chance, some columns may go extinct, i.e.,
     /// the homology path in that column reaches no leaf, consider calling
     /// [`AncestralAlignment::remove_extinct_columns`] on the resulting alignment.
-    fn simulate_ancestral_alignment<AA: AncestralAlignment>(&self) -> AA;
+    // TODO: inject a random number generator into the simulation, so that the user can control the
+    // seed and get reproducible results. then we dont need a refcell
+    fn simulate_ancestral_alignment<AA: AncestralAlignment>(&self) -> PhyloInfo<AA>;
     /// Simulates an alignment, i.e., returns only the leaf sequences (without ancestral sequences).
     /// It default implementation calls [`Self::simulate_ancestral_alignment`] and then transforms
     /// the resulting ancestral alignment into a regular alignment using
     /// [`AncestralAlignment::into_alignment`].
-    fn simulate_alignment<A: Alignment>(&self) -> A {
+    fn simulate_alignment<A: Alignment>(&self) -> PhyloInfo<A> {
         self.simulate_ancestral_alignment::<MASA>()
-            .into_alignment(self.tree())
+            .discard_ancestral_seqs()
     }
     /// Returns the tree the simulation is performed on.
     fn tree(&self) -> &Tree;

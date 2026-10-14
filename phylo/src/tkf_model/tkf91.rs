@@ -3,10 +3,12 @@ use std::fmt::Display;
 
 use log::warn;
 use num_enum::{FromPrimitive, IntoPrimitive};
+use rand::{Rng, SeedableRng};
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::ParamRange;
 use crate::phylo_info::PhyloInfo;
+use crate::random::RandomGenerator;
 use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCostBuilder as SCB};
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
@@ -30,6 +32,8 @@ pub struct TKF91IndelModel {
 }
 
 impl TKF91IndelModel {
+    /// Creates a new TKF91 indel model with the given insertion rate `lambda` and deletion rate `mu`.
+    /// Invalid parameters are replaced by their defaults ([`DEFAULT_LAMBDA, DEFAULT_MU`]) with a warning.
     pub fn new(lambda: f64, mu: f64) -> Self {
         let mut params = vec![lambda, mu];
         validate_lambda_mu(&mut params);
@@ -104,7 +108,10 @@ impl Display for TKF91IndelModel {
 impl FragmentSampler for TKF91IndelModel {
     /// In TKF91 every residue is its own independent link, so the fragment
     /// length is always 1 and its log-probability is ln(1) = 0.0.
-    fn sample_fragment_length<R: rand::Rng>(&self, _rng: &mut R) -> (usize, f64) {
+    fn sample_fragment_length<R: Rng + SeedableRng>(
+        &self,
+        _rng: &mut RandomGenerator<R>,
+    ) -> (usize, f64) {
         (1, 0.0)
     }
 }
