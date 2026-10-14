@@ -99,7 +99,6 @@ impl TKFModel for TKF92FixedIndelModel {
         let alignment_blocks = blocks_of_alignment(msa);
         merge_fragmentation_with_blocks(&self.fragmentation, &alignment_blocks)
     }
-
 }
 
 /// Merges the user defined fragmentation with the observed block borders in the MSA.
