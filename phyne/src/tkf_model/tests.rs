@@ -526,7 +526,7 @@ fn tkf_get_and_set_freqs() {
 #[test]
 fn tkf91_param_range() {
     let subst_model = SubstModel::<GTR>::default();
-    let tkf_indel_model = TKF91IndelModel::default();
+    let tkf_indel_model = TKF91IndelModel::new(&[1.0, 2.0]).unwrap();
     let tkf_cost = TKFCostBuilder::new(
         subst_model,
         tkf_indel_model,
@@ -552,7 +552,7 @@ fn tkf91_param_range() {
 fn tkf92_subst_param_range<Q: QMatrix, T: TKFModel, AA: AncestralAlignment>(
     cost: &TKFCost<Q, T, AA>,
 ) {
-    for subst_param_idx in 3..cost.param_count() {
+    for subst_param_idx in TKF92_PARAM_COUNT..cost.param_count() {
         let subst_range = cost.param_range(subst_param_idx);
         let true_subst_range = PARAM_RANGE_POSITIVE;
         assert_eq!(subst_range, true_subst_range);
@@ -574,10 +574,14 @@ fn tkf92_indel_param_range<T: TKFModel, AA: AncestralAlignment>(cost: &TKFIndelC
 #[test]
 fn tkf92_param_range() {
     let subst_model = SubstModel::<GTR>::default();
-    let tkf_indel_model = TKF92IndelModel::default();
-    let tkf_cost = TKFCostBuilder::new(tkf_indel_model, setup_test_phylo(Alphabet::dna()))
-        .build()
-        .unwrap();
+    let tkf_indel_model = TKF92IndelModel::new(&[1.0, 2.0, 0.3]).unwrap();
+    let tkf_cost = TKFCostBuilder::new(
+        subst_model,
+        tkf_indel_model,
+        setup_test_phylo(Alphabet::dna()),
+    )
+    .build()
+    .unwrap();
     tkf92_subst_param_range(&tkf_cost);
     tkf92_indel_param_range(&tkf_cost.indel_cost);
 }
@@ -876,9 +880,6 @@ fn tkf_indel_history_doesnt_change_felsenstein() {
     ]);
     let phylo1 = MASA::from_aligned_with_ancestral(seqs, tree.clone()).unwrap();
     let phylo2 = MASA::from_aligned_with_ancestral(seqs2, tree).unwrap();
-    let lambda = 0.1;
-    let mu = 0.2;
-    let r = 0.3;
     let subst_model =
         SubstModel::<GTR>::new(&[0.1, 0.3, 0.4, 0.2], &[1.2, 0.5, 5.0, 1.0, 1.0]).unwrap();
     let tkf_indel_model = TKF92IndelModel::default();
@@ -914,9 +915,9 @@ fn tkf_indel_history_doesnt_change_felsenstein() {
 fn modify_tkf92_subst_params_costs_match_template<Q: QMatrix + QMatrixMaker + Default>() {
     let phylo = setup_test_phylo(Q::alphabet());
     let subst_changed_param = 0.5;
-    let subst_model = SubstModel::<Q>::new(&[], &[subst_original_param]).unwrap();
+    let subst_model = SubstModel::<Q>::default();
     let tkf_indel_model = TKF92IndelModel::default();
-    let mut tkf_cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo.clone())
+    let mut tkf_cost = TKFCostBuilder::new(subst_model.clone(), tkf_indel_model, phylo.clone())
         .build()
         .unwrap();
 
@@ -931,9 +932,12 @@ fn modify_tkf92_subst_params_costs_match_template<Q: QMatrix + QMatrixMaker + De
     assert_ne!(logl, logl2);
 
     // The likelihood should be the same if we rebuild from scratch with the same modification
-    let subst_model = SubstModel::<Q>::new(&[], &[subst_changed_param]);
-    let tkf_indel_model = TKF92IndelModel::new(&[0.1, 0.2, 0.3]).unwrap();
-    let tkf_cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo)
+    let tkf_indel_model = TKF92IndelModel::default();
+    let mut new_params = subst_model.params().to_vec();
+    new_params[0] = subst_changed_param;
+    let new_subst_model =
+        SubstModel::<Q>::new(subst_model.freqs().as_slice(), &new_params).unwrap();
+    let tkf_cost = TKFCostBuilder::new(new_subst_model, tkf_indel_model, phylo)
         .build()
         .unwrap();
     let new_logl = ModelSearchCost::cost(&tkf_cost);
@@ -948,7 +952,7 @@ fn modify_tkf92_indel_params_costs_match_template<Q: QMatrix + Default>() {
     let tkf_original_mu = 0.2;
     let tkf_changed_mu = 0.25;
     let tkf_indel_model = TKF92IndelModel::new(&[0.1, tkf_original_mu, 0.3]).unwrap();
-    let mut tkf_cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo.clone())
+    let mut tkf_cost = TKFCostBuilder::new(subst_model.clone(), tkf_indel_model, phylo.clone())
         .build()
         .unwrap();
 
@@ -963,7 +967,6 @@ fn modify_tkf92_indel_params_costs_match_template<Q: QMatrix + Default>() {
     assert_ne!(logl, logl2);
 
     // The likelihood should be the same if we rebuild from scratch with the same modification
-    let new_subst_model = SubstModel::<Q>::default();
     let tkf_indel_model = TKF92IndelModel::new(&[0.1, tkf_changed_mu, 0.3]).unwrap();
     let tkf_cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo)
         .build()

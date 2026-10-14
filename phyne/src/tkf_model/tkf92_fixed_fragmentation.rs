@@ -240,8 +240,6 @@ mod private_tests {
 
     use crate::alignment::{Sequences, MASA};
     use crate::phylo_info::PhyloInfoBuilder;
-    use crate::phylo_info::{PhyloInfo, PhyloInfoBuilder};
-    use crate::tkf_model::TKF92IndelCostBuilder;
     use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder};
     use crate::{record_wo_desc as record, tree};
 

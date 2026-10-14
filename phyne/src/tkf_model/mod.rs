@@ -4,11 +4,9 @@ use crate::alignment::AncestralAlignment;
 use crate::evolutionary_models::FreqVector;
 use crate::likelihood::{ModelSearchCost, ParamRange, TreeSearchCost};
 use crate::phylo_info::PhyloInfo;
-use crate::substitution_models::{
-    FreqVector, QMatrix, SubstModel, SubstitutionCost, SubstitutionCostBuilder,
-};
+use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCost, SubstitutionCostBuilder};
 use crate::tree::Tree;
-use crate::Result;
+use crate::{Result, bail};
 
 pub mod tkf91;
 pub use tkf91::*;
