@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fmt::Display;
 
 use itertools::any;
@@ -6,12 +5,8 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::ParamRange;
-use crate::phylo_info::PhyloInfo;
-use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCostBuilder as SCB};
-use crate::tkf_model::{
-    TKFCost, TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
-};
-use crate::{bail, Result, REPORT_ISSUES_URL};
+use crate::tkf_model::{TKFModel, DEFAULT_LAMBDA, DEFAULT_MU};
+use crate::{bail, Result};
 
 pub const TKF91_PARAM_COUNT: usize = 2;
 
@@ -118,18 +113,6 @@ impl TKFModel for TKF91IndelModel {
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
         (1..msa.len() + 1).collect()
     }
-
-    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA> {
-        TKF91IndelCostBuilder::new(self.params(), phylo)
-            .build()
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Failed to build TKF91 indel cost from valid model. \
-                     Please report this at {REPORT_ISSUES_URL}. \
-                     Error: {e:?}"
-                )
-            })
-    }
 }
 
 impl Display for TKF91IndelModel {
@@ -140,57 +123,6 @@ impl Display for TKF91IndelModel {
             self.lambda(),
             self.mu(),
         )
-    }
-}
-
-/// Builder for the cost using the [`TKF91IndelModel`], i.e., without a substitution model.
-pub struct TKF91IndelCostBuilder<AA: AncestralAlignment> {
-    params: Vec<f64>,
-    phylo: PhyloInfo<AA>,
-}
-
-impl<AA: AncestralAlignment> TKF91IndelCostBuilder<AA> {
-    pub fn new(params: &[f64], phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            phylo,
-        }
-    }
-
-    pub fn build(self) -> Result<TKFIndelCost<TKF91IndelModel, AA>> {
-        let model = TKF91IndelModel::new(&self.params)?;
-        let info = TKFIndelModelInfo::new(&model, &self.phylo);
-        Ok(TKFIndelCost {
-            model,
-            phylo: self.phylo,
-            model_info: RefCell::new(info),
-        })
-    }
-}
-
-/// Builder for the TKF91 cost, i.e., with a substitution model.
-pub struct TKF91CostBuilder<Q: QMatrix, AA: AncestralAlignment> {
-    params: Vec<f64>,
-    subst_model: SubstModel<Q>,
-    phylo: PhyloInfo<AA>,
-}
-
-impl<Q: QMatrix, AA: AncestralAlignment> TKF91CostBuilder<Q, AA> {
-    pub fn new(params: &[f64], subst_model: SubstModel<Q>, phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            subst_model,
-            phylo,
-        }
-    }
-
-    pub fn build(self) -> Result<TKFCost<Q, TKF91IndelModel, AA>> {
-        let indel_cost = TKF91IndelCostBuilder::new(&self.params, self.phylo.clone()).build()?;
-        let subst_cost = SCB::new(self.subst_model, self.phylo.clone()).build()?;
-        Ok(TKFCost {
-            indel_cost,
-            subst_cost,
-        })
     }
 }
 

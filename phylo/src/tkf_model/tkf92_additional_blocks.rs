@@ -165,12 +165,7 @@ impl TKFModel for TKF92IndelModelAddBlocks {
         merge_fragmentation_with_blocks(&blocks, &self.additional_blocks)
     }
 
-    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA> {
-        // Just to make the compiler happy, will be remove when I close https://github.com/acg-team/phyne/pull/158
-        TKF92IndelAddBlocksCostBuilder::new(&self.params, self.additional_blocks.clone(), phylo)
-            .build()
-            .unwrap()
-    }
+
 }
 
 #[cfg(test)]

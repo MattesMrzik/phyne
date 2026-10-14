@@ -100,14 +100,6 @@ impl TKFModel for TKF92FixedIndelModel {
         merge_fragmentation_with_blocks(&self.fragmentation, &alignment_blocks)
     }
 
-    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA> {
-        let info = TKFIndelModelInfo::new(self, &phylo);
-        TKFIndelCost {
-            model: self.clone(),
-            phylo,
-            model_info: RefCell::new(info),
-        }
-    }
 }
 
 /// Merges the user defined fragmentation with the observed block borders in the MSA.
@@ -249,7 +241,7 @@ mod private_tests {
 
     use crate::alignment::{Sequences, MASA};
     use crate::phylo_info::{PhyloInfo, PhyloInfoBuilder};
-    use crate::tkf_model::TKF92IndelCostBuilder;
+    use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder};
     use crate::{record_wo_desc as record, tree};
 
     use super::*;
@@ -301,9 +293,8 @@ mod private_tests {
         let mu = 1.1;
         let r = 0.5;
 
-        let tkf92_cost = TKF92IndelCostBuilder::new(&[lambda, mu, r], phylo_info.clone())
-            .build()
-            .unwrap();
+        let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+        let tkf92_cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo_info.clone()).build();
         let cost = tkf92_cost.logl();
 
         let mut sum_over_fragmentations_cost = 0.0;
@@ -348,9 +339,8 @@ mod private_tests {
         let mu = 1.1;
         let r = 0.5;
 
-        let tkf92_cost = TKF92IndelCostBuilder::new(&[lambda, mu, r], phylo_info.clone())
-            .build()
-            .unwrap();
+        let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+        let tkf92_cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo_info.clone()).build();
         let cost = tkf92_cost.logl();
 
         let mut sum_over_fragmentations_cost = 0.0;

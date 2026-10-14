@@ -11,9 +11,8 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ModelSearchCost, ParamRange, TreeSearchCost};
 use crate::phylo_info::PhyloInfo;
 use crate::random::FakeGenerator;
-use crate::substitution_models::{FreqVector, QMatrix, SubstitutionCost};
+use crate::substitution_models::FreqVector;
 use crate::tkf_model::reestimate::EdgeSeqsReestimator;
-use crate::tkf_model::TKFCost;
 use crate::tree::NodeIdx::{self, Internal, Leaf};
 use crate::tree::Tree;
 use crate::REPORT_ISSUES_URL;
@@ -70,20 +69,6 @@ pub trait TKFModel: Clone + Display + Default {
     /// corresponding to the evolutionary events in this block [`TKFModel::block_prob`] computes
     /// the ln probability of the block under the model.
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize>;
-    /// Returns a [TKFIndelCost](`TKFIndelCost`) for this model.
-    fn indel_cost<AA: AncestralAlignment>(&self, phylo: PhyloInfo<AA>) -> TKFIndelCost<Self, AA>;
-    /// Returns a [TKFCost](`TKFCost`) for this model and a given substitution cost.
-    fn cost<Q: QMatrix, AA: AncestralAlignment>(
-        &self,
-        subst_cost: SubstitutionCost<Q, AA>,
-        phylo: PhyloInfo<AA>,
-    ) -> TKFCost<Q, Self, AA> {
-        let indel_cost = self.indel_cost(phylo);
-        TKFCost {
-            indel_cost,
-            subst_cost,
-        }
-    }
 }
 
 // TODO: link our paper once it is published. For now see original TKF92 paper: https://doi.org/10.1007/bf00163848
@@ -405,6 +390,26 @@ impl<T: TKFModel, AA: AncestralAlignment> TKFIndelCost<T, AA> {
             model_info.eta[usize::from(node_idx)]
         } else {
             0.0
+        }
+    }
+}
+
+pub struct TKFIndelCostBuilder<T: TKFModel, AA: AncestralAlignment> {
+    model: T,
+    phylo: PhyloInfo<AA>,
+}
+
+impl<T: TKFModel, AA: AncestralAlignment> TKFIndelCostBuilder<T, AA> {
+    pub fn new(model: T, phylo: PhyloInfo<AA>) -> Self {
+        Self { model, phylo }
+    }
+
+    pub fn build(self) -> TKFIndelCost<T, AA> {
+        let info = TKFIndelModelInfo::new(&self.model, &self.phylo);
+        TKFIndelCost {
+            model: self.model,
+            phylo: self.phylo,
+            model_info: RefCell::new(info),
         }
     }
 }

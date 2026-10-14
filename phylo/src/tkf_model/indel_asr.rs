@@ -11,7 +11,7 @@ use crate::optimisers::{ModelOptimiser, StopCondition};
 use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
 use crate::phylo_info::PhyloInfo;
 use crate::random::{DefaultGenerator, RandomGenerator};
-use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFModel};
+use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFIndelCostBuilder, TKFModel};
 use crate::tree::{NodeIdx, Tree};
 use crate::{bail, Result, DEFAULT_EPSILON};
 
@@ -121,7 +121,7 @@ impl<T: TKFModel> TKFIndelASR<T> {
             msa: initial_indel_points,
         };
 
-        let mut cost = self.indel_model.indel_cost(phylo);
+        let mut cost = TKFIndelCostBuilder::new(self.indel_model.clone(), phylo).build();
         let mut prev_cost = f64::NEG_INFINITY;
         let mut curr_cost = cost.cost();
         let mut delta = curr_cost - prev_cost;
