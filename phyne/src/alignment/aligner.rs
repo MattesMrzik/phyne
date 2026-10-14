@@ -1,5 +1,5 @@
 use crate::alignment::{Alignment, Sequences};
-use crate::phylo_info::validate_taxa_ids;
+use crate::phylo_info::{validate_taxa_ids, PhyloInfo};
 use crate::tree::Tree;
 use crate::{bail, Result};
 
@@ -9,13 +9,13 @@ pub trait Aligner<A: Alignment> {
     /// Checks:
     ///  - if sequences are not already aligned
     ///  - if the sequence IDs in the alignment match the taxa IDs in the tree ([`validate_taxa_ids`])
-    fn align(&self, seqs: &Sequences, tree: &Tree) -> Result<A> {
+    fn align(&self, seqs: Sequences, tree: Tree) -> Result<PhyloInfo<A>> {
         if seqs.aligned {
             bail!(Alignment, "sequences must not be already aligned");
         }
-        validate_taxa_ids(tree, seqs)?;
+        validate_taxa_ids(&tree, &seqs)?;
         Ok(self.align_unchecked(seqs, tree))
     }
     /// Aligns sequences. Is called by [`Self::align`].
-    fn align_unchecked(&self, seqs: &Sequences, tree: &Tree) -> A;
+    fn align_unchecked(&self, seqs: Sequences, tree: Tree) -> PhyloInfo<A>;
 }

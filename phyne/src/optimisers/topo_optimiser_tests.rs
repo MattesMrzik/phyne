@@ -74,17 +74,16 @@ define_optimise_trees!(
 fn k80_simple() {
     // Check that optimisation on k80 data improves k80 likelihood when starting from a given tree
     let tree = tree!("(((A:1.0,B:1.0)E:2.0,(C:1.0,D:1.0)F:2.0)G:3.0);");
-    let msa = MSA::from_aligned(
+    let info = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"CTATATATAC"),
             record!("B", b"ATATATATAA"),
             record!("C", b"TTATATATAT"),
             record!("D", b"TTATATATAT"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { msa, tree };
 
     let k80 = SubstModel::<K80>::new(&[0.25; 4], &[4.0]).unwrap();
     let c = SCB::new(k80.clone(), info).build().unwrap();
@@ -106,17 +105,16 @@ fn k80_simple() {
 fn k80_simple_nni() {
     // Check that optimisation on k80 data improves k80 likelihood when starting from a given tree
     let tree = tree!("(((A:1.0,B:1.0)E:2.0,(C:1.0,D:1.0)F:2.0)G:3.0);");
-    let msa = MSA::from_aligned(
+    let info = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"CTATATATAC"),
             record!("B", b"ATATATATAA"),
             record!("C", b"TTATATATAT"),
             record!("D", b"TTATATATAT"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { msa, tree };
 
     let k80 = SubstModel::<K80>::new(&[0.25; 4], &[4.0]).unwrap();
     let c = SCB::new(k80.clone(), info).build().unwrap();
@@ -690,10 +688,7 @@ fn basic_parsimony_tree_search() {
     ]);
     let tree = tree!("((A:1.0,D:1.0):1.0,(C:1.0,B:1.0):1.0):0.0;");
 
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs.clone(), tree).unwrap();
     let cost = BasicParsimonyCost::new(info).unwrap();
     assert_eq!(cost.cost(), -6.0);
 
@@ -706,17 +701,16 @@ fn basic_parsimony_tree_search() {
 #[test]
 fn dollo_tree_search() {
     let tree = tree!("(((A:1.0,C:1.0)E:2.0,(D:1.0,B:1.0)F:2.0)G:3.0);");
-    let msa = MSA::from_aligned(
+    let info = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("A", b"TTTTTTTTTTTCTATATATA-"),
             record!("B", b"TTTTTTTTTTTATATATAT-A"),
             record!("C", b"GGGGGGGGGGGTTATATATA-"),
             record!("D", b"GGGGGGGGGGGTTATATATA-"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info = PhyloInfo { msa, tree };
     let k80 = SubstModel::<K80>::new(&[0.25; 4], &[4.0]).unwrap();
     let scoring = ModelScoringBuilder::new(k80)
         .times(vec![1.0])

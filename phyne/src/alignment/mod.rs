@@ -7,7 +7,7 @@ use crate::alphabets::{Alphabet, AMB_CHAR};
 use crate::asr::AncestralSequenceReconstruction;
 use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
 use crate::phylo_info::{
-    set_missing_tree_node_ids, validate_ids_with_ancestors, validate_taxa_ids,
+    set_missing_tree_node_ids, validate_ids_with_ancestors, validate_taxa_ids, PhyloInfo,
 };
 use crate::tree::{NodeIdx, NodeIdx::Internal as Int, NodeIdx::Leaf, Tree};
 use crate::{align, aligned_seq, bail, record, Result};
@@ -77,22 +77,28 @@ pub trait Alignment: Display + Clone + Debug {
     fn internal_alignments(&self) -> &InternalAlignments;
     /// Checks if inputs are compatible, removes columns with only gaps and calls [`Self::from_aligned_unchecked`].
     ///
+    /// Tree is consumed and stored together with the alignment, because the alignment is only
+    /// meaningful in the context of the tree that it was built from.
+    ///
     /// # Errors
     ///
     /// - bails if sequences are not aligned
     /// - bails if sequence IDs do not match the taxa IDs in the tree ([`validate_taxa_ids`])
-    fn from_aligned(mut sequences: Sequences, tree: &Tree) -> Result<Self> {
+    fn from_aligned(mut sequences: Sequences, tree: Tree) -> Result<PhyloInfo<Self>> {
         if !sequences.aligned {
             bail!(Alignment, "sequences must be aligned")
         }
-        validate_taxa_ids(tree, &sequences)?;
+        validate_taxa_ids(&tree, &sequences)?;
         sequences.remove_gap_cols();
         Ok(Self::from_aligned_unchecked(sequences, tree))
     }
-    /// Constructs an alignment instance from aligned sequences and a phylogenetic tree. Is called
-    /// by [`Self::from_aligned`]. The caller must ensure that the sequences are aligned, that the
+    /// Constructs a [`PhyloInfo`] from aligned sequences and a phylogenetic tree. Is called
+    /// by [`Alignment::from_aligned`]. The caller must ensure that the sequences are aligned, that the
     /// sequence IDs are unique, and that the sequence IDs match the taxa IDs in the tree.
-    fn from_aligned_unchecked(sequences: Sequences, tree: &Tree) -> Self;
+    ///
+    /// Tree is consumed and stored together with the alignment, because the alignment is only
+    /// meaningful in the context of the tree that it was built from.
+    fn from_aligned_unchecked(sequences: Sequences, tree: Tree) -> PhyloInfo<Self>;
 }
 
 /// Represents an alignment of sequences that are associated with all nodes of a phylogenetic tree,
@@ -115,20 +121,27 @@ pub trait AncestralAlignment: Alignment {
     /// - if sequence IDs match the node IDs in the tree ([`validate_ids_with_ancestors`])
     /// - removes columns with only gaps ([`Sequences::remove_gap_cols`])
     ///
+    /// Tree is consumed and stored together with the alignment, because the alignment is only
+    /// meaningful in the context of the tree that it was built from.
+    ///
     /// Only overwrite this method if absolutely necessary. The default implementation
     /// ensures that prerequisites are met. Overwriting and not ensuring these checks
     /// may lead to unexpected panics or wrong results.
-    fn from_aligned_with_ancestral(mut all_seqs: Sequences, tree: &Tree) -> Result<Self> {
+    fn from_aligned_with_ancestral(mut all_seqs: Sequences, tree: Tree) -> Result<PhyloInfo<Self>> {
         if !all_seqs.aligned {
             bail!(Alignment, "sequences must be aligned")
         }
-        validate_ids_with_ancestors(tree, &all_seqs)?;
+        validate_ids_with_ancestors(&tree, &all_seqs)?;
         all_seqs.remove_gap_cols();
         Ok(Self::from_aligned_with_ancestral_unchecked(all_seqs, tree))
     }
-    /// Constructs an ancestral alignment instance from aligned sequences and a phylogenetic tree. Is called
-    /// by the default implementation of [`Self::from_aligned_with_ancestral`].
-    fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: &Tree) -> Self;
+    /// Constructs a [`PhyloInfo`] with ancestral sequences from aligned sequences and a
+    /// phylogenetic tree. Is called by the default implementation of
+    /// [`AncestralAlignment::from_aligned_with_ancestral`].
+    ///
+    /// Tree is consumed and stored together with the alignment, because the alignment is only
+    /// meaningful in the context of the tree that it was built from.
+    fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: Tree) -> PhyloInfo<Self>;
 }
 
 #[derive(Debug, Clone)]
@@ -201,8 +214,8 @@ impl Alignment for MSA {
     ///     record!("B1", Some("B1 sequence"), b"---A"),
     ///     record!("C2", Some("C2 sequence"), b"AA--"),
     /// ], Alphabet::dna())?;
-    /// let msa = MSA::from_aligned(seqs, &tree)?;
-    /// assert_eq!(msa.alphabet(), Alphabet::dna());
+    /// let phylo = MSA::from_aligned(seqs, tree)?;
+    /// assert_eq!(phylo.msa.alphabet(), Alphabet::dna());
     /// # Ok(()) }
     ///
     fn alphabet(&self) -> &Alphabet {
@@ -228,8 +241,8 @@ impl Alignment for MSA {
     ///     record!("B1", Some("B1 sequence"), b"---A"),
     ///     record!("C2", Some("C2 sequence"), b"AA--"),
     /// ])?;
-    /// let msa = MSA::from_aligned(seqs, &tree)?;
-    /// assert_eq!(msa.len(), 4);
+    /// let phylo = MSA::from_aligned(seqs, tree)?;
+    /// assert_eq!(phylo.msa.len(), 4);
     /// # Ok(()) }
     /// ```
     #[allow(clippy::len_without_is_empty)]
@@ -256,8 +269,8 @@ impl Alignment for MSA {
     ///     record!("B1", Some("B1 sequence"), b"---A"),
     ///     record!("C2", Some("C2 sequence"), b"AA--"),
     /// ])?;
-    /// let msa = MSA::from_aligned(seqs, &tree)?;
-    /// assert_eq!(msa.seq_count(), 3);
+    /// let phylo = MSA::from_aligned(seqs, tree)?;
+    /// assert_eq!(phylo.msa.seq_count(), 3);
     /// # Ok(()) }
     /// ```
     fn seq_count(&self) -> usize {
@@ -276,12 +289,12 @@ impl Alignment for MSA {
         &self.internal_alignments
     }
 
-    /// Constructs an alignment instance from aligned sequences and a phylogenetic tree.
+    /// Constructs a [`PhyloInfo`] from aligned sequences and a phylogenetic tree without
+    /// performing any checks.
     ///
     /// # Example
     /// ```
     /// use phyne::alignment::{Alignment, MSA, Sequences};
-    /// use phyne::phylo_info::PhyloInfo;
     /// use phyne::{record, tree};
     ///
     /// # use phyne::Result;
@@ -292,13 +305,12 @@ impl Alignment for MSA {
     ///     record!("B1", Some("B1 sequence"), b"---A"),
     ///     record!("C2", Some("C2 sequence"), b"AA--"),
     /// ])?;
-    /// let msa = MSA::from_aligned(seqs.clone(), &tree)?;
-    /// let phylo_info = PhyloInfo { msa, tree };
-    /// let aligned_seqs = phylo_info.compile_alignment(None)?;
+    /// let phylo = MSA::from_aligned_unchecked(seqs.clone(), tree);
+    /// let aligned_seqs = phylo.compile_alignment(None)?;
     /// assert_eq!(aligned_seqs, seqs);
     /// # Ok(()) }
     /// ```
-    fn from_aligned_unchecked(seqs: Sequences, tree: &Tree) -> MSA {
+    fn from_aligned_unchecked(seqs: Sequences, tree: Tree) -> PhyloInfo<MSA> {
         let msa_len = seqs[0].seq().len();
         let mut stack = HashMap::<NodeIdx, Mapping>::with_capacity(tree.len());
         let mut internal_alignments = InternalAlignments::with_capacity(tree.n);
@@ -329,11 +341,14 @@ impl Alignment for MSA {
             .collect();
 
         let seqs = seqs.into_gapless();
-        MSA {
-            seqs,
-            leaf_maps,
-            internal_alignments,
-            idx_to_id,
+        PhyloInfo {
+            msa: MSA {
+                seqs,
+                leaf_maps,
+                internal_alignments,
+                idx_to_id,
+            },
+            tree,
         }
     }
 }
@@ -418,49 +433,48 @@ impl Alignment for MASA {
     ///     record!("B1", Some("B1 sequence"), b"---A"),
     ///     record!("C2", Some("C2 sequence"), b"AA--"),
     /// ])?;
-    /// let masa = MASA::from_aligned(seqs.clone(), &tree)?;
-    /// let phylo_info = PhyloInfo { msa: masa, tree };
-    /// let aligned_seqs = phylo_info.compile_alignment(None)?;
+    /// let phylo = MASA::from_aligned(seqs.clone(), tree)?;
+    /// let aligned_seqs = phylo.compile_alignment(None)?;
     ///
     /// // checking leaf sequences
     /// assert_eq!(aligned_seqs, seqs);
     /// // checking ancestral sequences
-    /// let root_seq = phylo_info.msa.ancestral_seqs().record_by_id("I2").seq();
+    /// let root_seq = phylo.msa.ancestral_seqs().record_by_id("I2").seq();
     /// let root_seq = String::from_utf8_lossy(root_seq);
     /// assert_eq!(root_seq, "XX");
-    /// let root_map = phylo_info.msa.ancestral_map(&phylo_info.tree.root);
+    /// let root_map = phylo.msa.ancestral_map(&phylo.tree.root);
     /// assert_eq!(root_map, &vec![Some(0), Some(1), None, None]);
     /// // Ancestral sequences are inferred by (hard coded) ParsimonyPresenceAbsence.
     /// // Alternatively, you may call MSA::from_aligned and then call ASR on that.
-    /// let i1_seq = phylo_info.msa.ancestral_seqs().record_by_id("I1").seq();
+    /// let i1_seq = phylo.msa.ancestral_seqs().record_by_id("I1").seq();
     /// let i1_seq = String::from_utf8_lossy(i1_seq);
     /// assert_eq!(i1_seq, "XXX");
-    /// let i1_map = phylo_info.msa.ancestral_map(&phylo_info.tree.by_id("I1").idx);
+    /// let i1_map = phylo.msa.ancestral_map(&phylo.tree.by_id("I1").idx);
     /// assert_eq!(i1_map, &vec![Some(0), Some(1), None, Some(2)]);
     /// // or use the align_seq macro to test seq and map at the same time
     /// # Ok(()) }
     /// ```
-    fn from_aligned(sequences: Sequences, tree: &Tree) -> Result<Self> {
-        let tree = &set_missing_tree_node_ids(tree)?;
-        let msa = MSA::from_aligned(sequences, tree)?;
+    fn from_aligned(sequences: Sequences, mut tree: Tree) -> Result<PhyloInfo<Self>> {
+        set_missing_tree_node_ids(&mut tree)?;
+        let phylo = MSA::from_aligned(sequences, tree)?;
         // TODO: Do the internal_alignments, built in the line above, conform with adding ancestral seqs?
         //       see also from_aligned_with_ancestral
         //       See issue #150 https://github.com/acg-team/phyne/issues/150
         // If the user wants to use a different ASR method to build the MASA, they can call
         // MSA::from_aligned and then call their desired ASR method on the MSA.
         let asr = ParsimonyPresenceAbsence {};
-        asr.reconstruct_ancestral_seqs(&msa, tree)
+        asr.reconstruct_ancestral_seqs(phylo)
     }
 
-    fn from_aligned_unchecked(sequences: Sequences, tree: &Tree) -> Self {
-        let msa = MSA::from_aligned_unchecked(sequences, tree);
+    fn from_aligned_unchecked(sequences: Sequences, tree: Tree) -> PhyloInfo<Self> {
+        let phylo = MSA::from_aligned_unchecked(sequences, tree);
         // TODO: do the internal alignments, built in the above line, conform with adding ancestral seqs?
         //       see also from_aligned_with_ancestral
         //       See issue #150 https://github.com/acg-team/phyne/issues/150
         // If the user wants to use a different ASR method to build the MASA, they can call
         // MSA::from_aligned and then call their desired ASR method on the MSA.
         let asr = ParsimonyPresenceAbsence {};
-        asr.reconstruct_ancestral_seqs_unchecked(&msa, tree)
+        asr.reconstruct_ancestral_seqs_unchecked(phylo)
     }
 }
 
@@ -513,7 +527,6 @@ impl AncestralAlignment for MASA {
     /// # Example
     /// ```
     /// use phyne::alignment::{Alignment, AncestralAlignment, MASA, Sequences};
-    /// use phyne::phylo_info::PhyloInfo;
     /// use phyne::{record, tree};
     /// # use phyne::Result;
     ///
@@ -526,13 +539,13 @@ impl AncestralAlignment for MASA {
     ///     record!("I1", Some("I1 sequence"), b"AA-A"),
     ///     record!("I2", Some("I2 sequence"), b"ACGT"),
     /// ])?;
-    /// let masa = MASA::from_aligned_with_ancestral_unchecked(seqs.clone(), &tree);
+    /// let phylo = MASA::from_aligned_with_ancestral_unchecked(seqs.clone(), tree);
     ///
-    /// assert_eq!(masa.seqs().len(), 3);
-    /// assert_eq!(masa.ancestral_seqs().len(), 2);
+    /// assert_eq!(phylo.msa.seqs().len(), 3);
+    /// assert_eq!(phylo.msa.ancestral_seqs().len(), 2);
     /// # Ok(()) }
     /// ```
-    fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: &Tree) -> MASA {
+    fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: Tree) -> PhyloInfo<MASA> {
         let mut leaf_maps = HashMap::<NodeIdx, Mapping>::with_capacity(tree.n);
         let mut ancestral_maps = HashMap::<NodeIdx, Mapping>::with_capacity(tree.len() - tree.n);
         let mut leaf_records = Vec::with_capacity(tree.n);
@@ -569,13 +582,16 @@ impl AncestralAlignment for MASA {
         // TODO: internal_alignments still missing. How do they work if there are seqs at internal nodes?
         //       see also MASA::from_aligned
         //       See issue #150 https://github.com/acg-team/phyne/issues/150
-        MASA {
-            leaf_seqs,
-            ancestral_seqs,
-            leaf_maps,
-            ancestral_maps,
-            idx_to_id,
-            internal_alignments: HashMap::<NodeIdx, PairwiseAlignment>::new(),
+        PhyloInfo {
+            msa: MASA {
+                leaf_seqs,
+                ancestral_seqs,
+                leaf_maps,
+                ancestral_maps,
+                idx_to_id,
+                internal_alignments: HashMap::<NodeIdx, PairwiseAlignment>::new(),
+            },
+            tree,
         }
     }
 }

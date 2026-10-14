@@ -4,7 +4,6 @@ use fixedbitset::FixedBitSet;
 
 use crate::alignment::{AncestralAlignment, Sequences, MASA};
 use crate::alphabets::Alphabet;
-use crate::phylo_info::PhyloInfo;
 use crate::random::FakeGenerator;
 use crate::tkf_model::reestimate::mapping_from_node_seq;
 use crate::tkf_model::tests::setup_test_phylo;
@@ -16,7 +15,7 @@ fn tkf_reestimate_without_choice() {
     let tree = tree!("(((A1:2.0,(B2:1.0, C3:1.2)I4:2.0)I5:0.3,D6:2.0)R7:1.0);");
     // The alignment is designed such that for every site the re-estimation will have no choice but
     // to keep the current states, since it must conform to Dollo's principle.
-    let msa = MASA::from_aligned_with_ancestral(
+    let phylo = MASA::from_aligned_with_ancestral(
         Sequences::new_unchecked(vec![
             record!("A1", b"-----N-----"),
             record!("B2", b"NN----NN-NN"),
@@ -26,10 +25,9 @@ fn tkf_reestimate_without_choice() {
             record!("D6", b"NNNNNN---NN"),
             record!("R7", b"NNNNNN---NN"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let phylo = PhyloInfo { msa, tree };
     let mut cost = TKF92IndelCostBuilder::new(&[0.4, 0.5, 0.8], phylo)
         .build()
         .unwrap();

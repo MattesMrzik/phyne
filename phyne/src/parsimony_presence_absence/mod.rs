@@ -4,6 +4,7 @@ use hashbrown::HashMap;
 use crate::alignment::{Alignment, AncestralAlignment, Sequences};
 use crate::alphabets::GAP;
 use crate::asr::AncestralSequenceReconstruction;
+use crate::phylo_info::PhyloInfo;
 use crate::tree::{
     NodeIdx::{self, Internal, Leaf},
     Tree,
@@ -25,21 +26,21 @@ pub struct ParsimonyPresenceAbsence {}
 impl<A: Alignment, AA: AncestralAlignment> AncestralSequenceReconstruction<A, AA>
     for ParsimonyPresenceAbsence
 {
-    fn reconstruct_ancestral_seqs_unchecked(&self, alignment: &A, tree: &Tree) -> AA {
+    fn reconstruct_ancestral_seqs_unchecked(&self, phylo: PhyloInfo<A>) -> PhyloInfo<AA> {
         let mut aligned_leaf_records = Vec::new();
-        for leaf in tree.leaves() {
-            let unaligned_record = alignment.seqs().record_by_id(&leaf.id);
+        for leaf in phylo.tree.leaves() {
+            let unaligned_record = phylo.msa.seqs().record_by_id(&leaf.id);
             debug_assert_eq!(unaligned_record.id(), leaf.id);
             aligned_leaf_records.push(record!(
                 &leaf.id,
                 unaligned_record.desc(),
-                &aligned_seq!(alignment.leaf_map(&leaf.idx), unaligned_record.seq())
+                &aligned_seq!(phylo.msa.leaf_map(&leaf.idx), unaligned_record.seq())
             ));
         }
-        aligned_leaf_records.append(&mut get_ancestral_records(tree, alignment));
-        let all_seqs =
-            Sequences::with_alphabet_unchecked(aligned_leaf_records, alignment.seqs().alphabet());
-        AA::from_aligned_with_ancestral_unchecked(all_seqs, tree)
+        let alphabet = phylo.msa.seqs().alphabet();
+        aligned_leaf_records.append(&mut get_ancestral_records(&phylo));
+        let all_seqs = Sequences::with_alphabet_unchecked(aligned_leaf_records, alphabet);
+        AA::from_aligned_with_ancestral_unchecked(all_seqs, phylo.tree)
     }
 }
 
@@ -47,23 +48,23 @@ impl<A: Alignment, AA: AncestralAlignment> AncestralSequenceReconstruction<A, AA
 // - insertion location is latest common ancestors of all non-gap characters
 // - deletion location is node n such that every leaf in the subtree rooted in n
 //   is a gap and the parent of n is not a deletion location
-fn get_ancestral_records<A: Alignment>(tree: &Tree, alignment: &A) -> Vec<Record> {
+fn get_ancestral_records<A: Alignment>(phylo: &PhyloInfo<A>) -> Vec<Record> {
     // counter[node] keeps track of the sequence index during the procedural generated mapping for the node
     let mut ancestral_seqs = HashMap::new();
     // TODO: i could also have a matrix has_char[node, site] and then
     //       loop over nodes and then sites, which might be faster due to caches
     //       see https://github.com/acg-team/phyne/pull/48/files#r2046683347
     //       See issue #63 https://github.com/acg-team/phyne/issues/63
-    for site in 0..alignment.len() {
+    for site in 0..phylo.msa.len() {
         // upward pass
-        let has_char = non_empty_clades(alignment, tree, site);
+        let has_char = non_empty_clades(phylo, site);
         // downward pass
-        elongate_seqs(tree, &mut ancestral_seqs, site, has_char);
+        elongate_seqs(&phylo.tree, &mut ancestral_seqs, site, has_char);
     }
     let mut records = Vec::new();
     for (node_idx, seq) in ancestral_seqs {
         records.push(record!(
-            tree.node_id(&node_idx),
+            phylo.tree.node_id(&node_idx),
             None,
             &seq.iter()
                 .map(|&b| if b { b'X' } else { GAP })
@@ -103,17 +104,17 @@ fn elongate_seqs(
 }
 
 /// Returns a vector V with V[n] = true iff there is a leaf in the subtree rooted in node n that is not a gap.
-fn non_empty_clades<A: Alignment>(leaf_alignment: &A, tree: &Tree, site: usize) -> Vec<bool> {
-    let mut has_char = vec![false; tree.len()];
-    for node_idx in tree.postorder() {
+fn non_empty_clades<A: Alignment>(phylo: &PhyloInfo<A>, site: usize) -> Vec<bool> {
+    let mut has_char = vec![false; phylo.tree.len()];
+    for node_idx in phylo.tree.postorder() {
         match node_idx {
             Leaf(idx) => {
                 // TODO: record_by_id is slow
                 //       See issue #63 https://github.com/acg-team/phyne/issues/63
-                has_char[*idx] = leaf_alignment.leaf_map(node_idx)[site].is_some();
+                has_char[*idx] = phylo.msa.leaf_map(node_idx)[site].is_some();
             }
             Internal(idx) => {
-                let children = &tree.node(node_idx).children;
+                let children = &phylo.tree.node(node_idx).children;
                 has_char[*idx] =
                     has_char[usize::from(children[0])] || has_char[usize::from(children[1])];
             }

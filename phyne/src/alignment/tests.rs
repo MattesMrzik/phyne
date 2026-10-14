@@ -8,7 +8,6 @@ use crate::alignment::{
 };
 use crate::alphabets::{Alphabet, AMINOACIDS, NUCLEOTIDES};
 use crate::io::read_sequences;
-use crate::phylo_info::PhyloInfo;
 use crate::tree::{
     NodeIdx::{Internal as I, Leaf as L},
     Tree,
@@ -173,16 +172,13 @@ fn build_from_aligned_sequences() {
     let aligned_seqs = test_alignment(&["A0", "B1", "C2", "D3", "E4"]);
     let unaligned_seqs = aligned_seqs.into_gapless();
     let (node_map, leaf_map) = maps();
-    let msa = MSA::from_aligned(aligned_seqs.clone(), &tree).unwrap();
+    let phylo = MSA::from_aligned(aligned_seqs.clone(), tree).unwrap();
 
-    assert_eq!(*msa.internal_alignments(), node_map);
-    assert_eq!(msa.leaf_maps, leaf_map);
-    assert_eq!(msa.seqs, unaligned_seqs);
-    assert_eq!(msa.len(), 5);
-    assert_eq!(
-        PhyloInfo { msa, tree }.compile_alignment(None).unwrap(),
-        aligned_seqs
-    );
+    assert_eq!(*phylo.msa.internal_alignments(), node_map);
+    assert_eq!(phylo.msa.leaf_maps, leaf_map);
+    assert_eq!(phylo.msa.seqs, unaligned_seqs);
+    assert_eq!(phylo.msa.len(), 5);
+    assert_eq!(phylo.compile_alignment(None).unwrap(), aligned_seqs);
 }
 
 #[test]
@@ -195,9 +191,9 @@ fn fail_from_unaligned_sequences() {
         record!("E4", Some("E4 sequence"), b"AAAA"),
     ]);
     let tree = test_tree();
-    let msa = MSA::from_aligned(seqs, &tree);
+    let err = MSA::from_aligned(seqs, tree);
     assert_matches!(
-        msa,
+        err,
         Err(Error::Alignment(msg)) if msg.contains("sequences must be aligned")
     );
 }
@@ -210,23 +206,18 @@ fn compile_msa_root() {
             .into_iter()
             .choose_multiple(&mut rng(), 5),
     );
-    let msa = MSA::from_aligned(aligned_seqs.clone(), &tree).unwrap();
-    assert_eq!(
-        PhyloInfo { msa, tree }.compile_alignment(None).unwrap(),
-        aligned_seqs
-    );
+    let phylo = MSA::from_aligned(aligned_seqs.clone(), tree).unwrap();
+    assert_eq!(phylo.compile_alignment(None).unwrap(), aligned_seqs);
 }
 
 #[test]
 fn compile_msa_int1() {
     let tree = test_tree();
     let aligned_seqs = test_alignment(&["A0", "B1", "C2", "D3", "E4"]);
-    let msa = MSA::from_aligned(aligned_seqs, &tree).unwrap();
     let node_idx = tree.idx("I5");
+    let phylo = MSA::from_aligned(aligned_seqs, tree).unwrap();
     assert_eq!(
-        PhyloInfo { msa, tree }
-            .compile_alignment(Some(&node_idx))
-            .unwrap(),
+        phylo.compile_alignment(Some(&node_idx)).unwrap(),
         test_alignment(&["A0", "B1"]),
     );
 }
@@ -235,7 +226,6 @@ fn compile_msa_int1() {
 fn compile_msa_int2() {
     let tree = test_tree();
     let aligned_seqs = test_alignment(&["A0", "B1", "C2", "D3", "E4"]);
-    let msa = MSA::from_aligned(aligned_seqs, &tree).unwrap();
     let d3 = test_alignment(&["D3"]).s.pop().unwrap();
     let e4 = test_alignment(&["E4"]).s.pop().unwrap();
     let node_idx = tree.idx("I6");
@@ -243,12 +233,8 @@ fn compile_msa_int2() {
         record!(d3.id(), d3.desc(), b"-A-"),
         record!(e4.id(), e4.desc(), b"AAA"),
     ]);
-    assert_eq!(
-        PhyloInfo { msa, tree }
-            .compile_alignment(Some(&node_idx))
-            .unwrap(),
-        data
-    );
+    let phylo = MSA::from_aligned(aligned_seqs, tree).unwrap();
+    assert_eq!(phylo.compile_alignment(Some(&node_idx)).unwrap(), data);
 }
 
 #[test]
@@ -256,12 +242,11 @@ fn compile_msa_leaf() {
     let tree = test_tree();
     let aligned_seqs = test_alignment(&["A0", "B1", "C2", "D3", "E4"]);
     let unaligned_seqs = aligned_seqs.clone().into_gapless();
-    let msa = MSA::from_aligned(aligned_seqs.clone(), &tree).unwrap();
-    let phylo_info = PhyloInfo { msa, tree };
-    for leaf_id in phylo_info.tree.leaf_ids() {
+    let phylo = MSA::from_aligned(aligned_seqs.clone(), tree).unwrap();
+    for leaf_id in phylo.tree.leaf_ids() {
         assert_eq!(
-            phylo_info
-                .compile_alignment(Some(&phylo_info.tree.idx(&leaf_id)))
+            phylo
+                .compile_alignment(Some(&phylo.tree.idx(&leaf_id)))
                 .unwrap(),
             Sequences::new_unchecked(vec![unaligned_seqs.record_by_id(&leaf_id).clone()])
         );
@@ -273,9 +258,9 @@ fn input_msa_empty_col() {
     let tree = test_tree();
     let sequences =
         Sequences::new_unchecked(read_sequences("./data/sequences_empty_col.fasta").unwrap());
-    let msa = MSA::from_aligned(sequences, &tree).unwrap();
-    assert_eq!(msa.len(), 40 - 1);
-    assert_eq!(msa.seq_count(), 5);
+    let phylo = MSA::from_aligned(sequences, tree).unwrap();
+    assert_eq!(phylo.msa.len(), 40 - 1);
+    assert_eq!(phylo.msa.seq_count(), 5);
 }
 
 #[test]
@@ -314,7 +299,7 @@ fn fmt_alignment() {
     let tree = tree!("(C:0.06465432,D:27.43128366,(A:0.00000001,B:0.00000001):0.08716381);");
     let sequences =
         Sequences::new_unchecked(read_sequences("./data/sequences_DNA1.fasta").unwrap());
-    let msa = MSA::from_aligned(sequences, &tree).unwrap();
+    let msa = MSA::from_aligned(sequences, tree).unwrap().msa;
     let true_content = std::fs::read_to_string("./data/sequences_DNA1.fasta").unwrap();
     let mut true_lines = true_content.lines().collect::<Vec<_>>();
     true_lines.sort();
@@ -334,7 +319,7 @@ fn display_alignment() {
     let tree = tree!("(C:0.06465432,D:27.43128366,(A:0.00000001,B:0.00000001):0.08716381);");
     let sequences =
         Sequences::new_unchecked(read_sequences("./data/sequences_DNA1.fasta").unwrap());
-    let msa = MSA::from_aligned(sequences, &tree).unwrap();
+    let msa = MSA::from_aligned(sequences, tree).unwrap().msa;
 
     let s = format!("{msa}");
     let mut lines = s.lines().collect::<Vec<_>>();
@@ -355,7 +340,9 @@ fn display_ancestral_alignment() {
     let sequences = Sequences::new_unchecked(
         read_sequences("./data/sequences_DNA1_with_ancestors.fasta").unwrap(),
     );
-    let msa = MASA::from_aligned_with_ancestral(sequences, &tree).unwrap();
+    let msa = MASA::from_aligned_with_ancestral(sequences, tree)
+        .unwrap()
+        .msa;
     let true_lines = std::fs::read_to_string("./data/sequences_DNA1_with_ancestors.fasta").unwrap();
     let mut true_lines = true_lines.lines().collect::<Vec<_>>();
     true_lines.sort();
@@ -376,7 +363,7 @@ fn from_aligned_with_ancestral_fails() {
     let seqs =
         Sequences::new_unchecked(read_sequences("./data/sequences_DNA2_unaligned.fasta").unwrap());
 
-    let err = MASA::from_aligned_with_ancestral(seqs, &tree);
+    let err = MASA::from_aligned_with_ancestral(seqs, tree);
 
     assert_matches!(
         err,
@@ -390,11 +377,10 @@ fn masa_compile_root() {
     let tree = tree!("(C:0.06465432,D:27.43128366,(A:0.00000001,B:0.00000001):0.08716381);");
     let sequences =
         Sequences::new_unchecked(read_sequences("./data/sequences_DNA1.fasta").unwrap());
-    let masa = MASA::from_aligned_unchecked(sequences.clone(), &tree);
-    let phylo_info = PhyloInfo { msa: masa, tree };
+    let phylo = MASA::from_aligned_unchecked(sequences.clone(), tree);
 
     // act
-    let compiled = phylo_info.compile_alignment(None).unwrap();
+    let compiled = phylo.compile_alignment(None).unwrap();
 
     // assert
     assert_eq!(compiled, sequences);
@@ -406,8 +392,8 @@ fn masa_compile_subroot() {
     let tree = tree!("(C:0.06465432,D:27.43128366,(A:0.00000001,B:0.00000001):0.08716381);");
     let sequences =
         Sequences::new_unchecked(read_sequences("./data/sequences_DNA1.fasta").unwrap());
-    let masa = MASA::from_aligned(sequences.clone(), &tree).unwrap();
     let subroot_id = "C";
+    let phylo = MASA::from_aligned(sequences.clone(), tree).unwrap();
     let mut true_compiled = Sequences::new_unchecked(
         sequences
             .into_iter()
@@ -416,11 +402,10 @@ fn masa_compile_subroot() {
             .collect(),
     );
     true_compiled.remove_gap_cols();
-    let phylo_info = PhyloInfo { msa: masa, tree };
 
     // act
-    let compiled = phylo_info
-        .compile_alignment(Some(&phylo_info.tree.idx(subroot_id)))
+    let compiled = phylo
+        .compile_alignment(Some(&phylo.tree.idx(subroot_id)))
         .unwrap();
 
     // assert
@@ -488,7 +473,9 @@ fn sequence_iterator_access() {
 #[test]
 fn update_ancestral_map_valid() {
     let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    let mut msa = MASA::from_aligned_with_ancestral(
+    let node_id = "I3";
+    let node_idx = tree.idx(node_id);
+    let mut info = MASA::from_aligned_with_ancestral(
         Sequences::new_unchecked(vec![
             record_wo_desc!("A1", b"--GTGGA---"),
             record_wo_desc!("B2", b"-------NNA"),
@@ -496,37 +483,46 @@ fn update_ancestral_map_valid() {
             record_wo_desc!("C4", b"AGG-------"),
             record_wo_desc!("R5", b"--A-------"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
 
-    let node_id = "I3";
-    let node_idx = &tree.idx(node_id);
-    assert_eq!(msa.ancestral_map(node_idx), &align!(b"--N-NN----"));
+    assert_eq!(info.msa.ancestral_map(&node_idx), &align!(b"--N-NN----"));
     // the actual chars are not important in the creation of the new_map, just the presence/absence of gaps
     let new_map = align!(b"A-AA-AAA-A");
-    msa.update_ancestral_map(node_idx, new_map.clone())
+    info.msa
+        .update_ancestral_map(&node_idx, new_map.clone())
         .expect("should update ancestral map successfully");
-    assert_eq!(msa.ancestral_map(node_idx), &new_map);
-    assert_eq!(msa.ancestral_seqs().record_by_id(node_id).seq(), b"XTXCXXX");
+    assert_eq!(info.msa.ancestral_map(&node_idx), &new_map);
+    assert_eq!(
+        info.msa.ancestral_seqs().record_by_id(node_id).seq(),
+        b"XTXCXXX"
+    );
 
     let new_map = align!(b"---A-A---A");
-    msa.update_ancestral_map(node_idx, new_map.clone())
+    info.msa
+        .update_ancestral_map(&node_idx, new_map.clone())
         .expect("should update ancestral map successfully");
-    assert_eq!(msa.ancestral_map(node_idx), &new_map);
-    assert_eq!(msa.ancestral_seqs().record_by_id(node_id).seq(), b"XCX");
+    assert_eq!(info.msa.ancestral_map(&node_idx), &new_map);
+    assert_eq!(
+        info.msa.ancestral_seqs().record_by_id(node_id).seq(),
+        b"XCX"
+    );
 
     let new_map = align!(b"-----A--A-");
-    msa.update_ancestral_map(node_idx, new_map.clone())
+    info.msa
+        .update_ancestral_map(&node_idx, new_map.clone())
         .expect("should update ancestral map successfully");
-    assert_eq!(msa.ancestral_map(node_idx), &new_map);
-    assert_eq!(msa.ancestral_seqs().record_by_id(node_id).seq(), b"CX");
+    assert_eq!(info.msa.ancestral_map(&node_idx), &new_map);
+    assert_eq!(info.msa.ancestral_seqs().record_by_id(node_id).seq(), b"CX");
 }
 
 #[test]
 fn update_ancestral_maps_fails_wrong_length() {
     let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-    let mut msa = MASA::from_aligned_with_ancestral(
+    let node_id = "I3";
+    let node_idx = tree.idx(node_id);
+    let mut info = MASA::from_aligned_with_ancestral(
         Sequences::new_unchecked(vec![
             record_wo_desc!("A1", b"--GTGGA---"),
             record_wo_desc!("B2", b"-------NNA"),
@@ -534,13 +530,11 @@ fn update_ancestral_maps_fails_wrong_length() {
             record_wo_desc!("C4", b"AGG-------"),
             record_wo_desc!("R5", b"--A-------"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
     let new_map = align!(b"A-AAAA-A");
-    let node_id = "I3";
-    let node_idx = &tree.idx(node_id);
-    let err = msa.update_ancestral_map(node_idx, new_map);
+    let err = info.msa.update_ancestral_map(&node_idx, new_map);
     assert_matches!(
         err,
         Err(Error::AncestralAlignment(msg)) if msg.contains("does not match MSA length")
@@ -553,8 +547,8 @@ fn update_ancestral_map_nonexistent_internal() {
     let sequences = Sequences::new_unchecked(
         read_sequences("./data/sequences_DNA1_with_ancestors.fasta").unwrap(),
     );
-    let mut msa = MASA::from_aligned_with_ancestral(sequences, &tree).unwrap();
-    let err = msa.update_ancestral_map(&I(10), align!(b"-ACGT"));
+    let mut info = MASA::from_aligned_with_ancestral(sequences, tree).unwrap();
+    let err = info.msa.update_ancestral_map(&I(10), align!(b"-ACGT"));
     assert_matches!(
         err,
         Err(Error::AncestralAlignment(msg)) if msg.contains("node 10 is not a valid internal node in the tree")
@@ -567,8 +561,8 @@ fn update_ancestral_map_leaf() {
     let sequences = Sequences::new_unchecked(
         read_sequences("./data/sequences_DNA1_with_ancestors.fasta").unwrap(),
     );
-    let mut msa = MASA::from_aligned_with_ancestral(sequences, &tree).unwrap();
-    let err = msa.update_ancestral_map(&L(2), align!(b"-ACGT"));
+    let mut info = MASA::from_aligned_with_ancestral(sequences, tree).unwrap();
+    let err = info.msa.update_ancestral_map(&L(2), align!(b"-ACGT"));
     assert_matches!(
         err,
         Err(Error::AncestralAlignment(msg)) if msg.contains("ancestral map cannot be set for a leaf node")

@@ -2,6 +2,7 @@ use assert_matches::assert_matches;
 
 use crate::alignment::{Aligner, Alignment, Sequences, MSA};
 use crate::parsimony::{GapCost, ParsimonyAligner, SimpleScoring, SiteFlag::*};
+use crate::phylo_info::PhyloInfo;
 use crate::{align, record_wo_desc as rec, site, tree};
 use crate::{Error, Result};
 
@@ -62,10 +63,10 @@ fn align_two_on_tree() {
     let scoring = SimpleScoring::new(mismatch, gap);
 
     let aligner = ParsimonyAligner::new(scoring);
-    let (alignment, score): (MSA, _) = aligner.align_with_scores(&seqs, &tree);
+    let (phylo, score): (PhyloInfo<MSA>, _) = aligner.align_with_scores(seqs, tree);
 
-    assert_eq!(score[Into::<usize>::into(tree.root)], 3.5);
-    let alignment = &alignment.internal_alignments()[&tree.root];
+    assert_eq!(score[usize::from(phylo.tree.root)], 3.5);
+    let alignment = &phylo.msa.internal_alignments()[&phylo.tree.root];
     assert_eq!(alignment.len(), 4);
 }
 
@@ -154,19 +155,20 @@ fn align_four_on_tree() {
     let scoring = SimpleScoring::new(mismatch, gap);
 
     let aligner = ParsimonyAligner::new(scoring);
-    let (alignment, score): (MSA, _) = aligner.align_with_scores(&seqs, &tree);
+    let (phylo, score): (PhyloInfo<MSA>, _) = aligner.align_with_scores(seqs, tree);
+    let alignment = &phylo.msa;
     // first cherry
-    let idx = &tree.by_id("A").parent.unwrap();
+    let idx = &phylo.tree.by_id("A").parent.unwrap();
     assert_eq!(score[usize::from(idx)], 3.5);
     assert_eq!(alignment.internal_alignments()[idx].len(), 4);
 
     // second cherry
-    let idx = &tree.by_id("C").parent.unwrap();
+    let idx = &phylo.tree.by_id("C").parent.unwrap();
     assert_eq!(score[usize::from(idx)], 2.0);
     assert_eq!(alignment.internal_alignments()[idx].len(), 2);
 
     // root, three possible alignments
-    let idx = &tree.root;
+    let idx = &phylo.tree.root;
     assert!(score[usize::from(idx)] == 1.0 || score[usize::from(idx)] == 2.0);
     if score[2] == 1.0 {
         assert_eq!(alignment.internal_alignments()[idx].len(), 4);
@@ -199,7 +201,7 @@ fn try_aligning_aligned_sequences() {
     ]);
     let tree = tree!("((A:1.0, B:1.0):1.0, C:2.0);");
     let aligner = ParsimonyAligner::new(scoring);
-    let alignment: Result<MSA> = aligner.align(&seqs, &tree);
+    let alignment: Result<PhyloInfo<MSA>> = aligner.align(seqs, tree);
 
     assert_matches!(
         alignment,

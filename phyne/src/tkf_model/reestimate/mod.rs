@@ -902,7 +902,7 @@ mod private_tests {
     #[test]
     fn tkf_const_per_alignment() {
         let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
-        let msa = MASA::from_aligned_with_ancestral(
+        let phylo = MASA::from_aligned_with_ancestral(
             Sequences::new_unchecked(vec![
                 record!("A1", b""),
                 record!("B2", b""),
@@ -910,10 +910,9 @@ mod private_tests {
                 record!("C4", b""),
                 record!("R5", b""),
             ]),
-            &tree,
+            tree,
         )
         .unwrap();
-        let phylo = PhyloInfo { msa, tree };
         let mut cost = TKF92IndelCostBuilder::new(&[0.4, 0.5, 0.8], phylo)
             .build()
             .unwrap();

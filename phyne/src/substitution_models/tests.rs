@@ -501,12 +501,11 @@ fn dna_normalised() {
 #[cfg(test)]
 fn setup_simple_phylo_info(blen_i: f64, blen_j: f64) -> PhyloInfo<MSA> {
     let tree = tree!(format!("((A0:{blen_i},B1:{blen_j}):1.0);").as_str());
-    let msa = MSA::from_aligned(
+    MSA::from_aligned(
         Sequences::new_unchecked(vec![record!("A0", b"A"), record!("B1", b"A")]),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[test]
@@ -525,17 +524,16 @@ fn dna_simple_likelihood() {
 #[cfg(test)]
 fn setup_cb_example_phylo_info() -> PhyloInfo<MSA> {
     let tree = tree!("((one:2,two:2):1,(three:1,four:1):2);");
-    let msa = MSA::from_aligned(
+    MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("one", b"C"),
             record!("two", b"A"),
             record!("three", b"T"),
             record!("four", b"G"),
         ]),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[cfg(test)]
@@ -613,31 +611,26 @@ fn same_likelihood_on_param_change() {
 #[cfg(test)]
 fn dna_gaps_as_ambigs_template<Q: QMatrix>(model: SubstModel<Q>) {
     let tree = tree!("((one:2,two:2):1,(three:1,four:1):2);");
-    let msa = MSA::from_aligned(
+    let info_ambig = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("one", b"CCCCCCXX"),
             record!("two", b"XXAAAAAA"),
             record!("three", b"TTTNNTTT"),
             record!("four", b"GNGGGGNG"),
         ]),
-        &tree,
+        tree.clone(),
     )
     .unwrap();
-    let info_ambig = PhyloInfo {
-        msa,
-        tree: tree.clone(),
-    };
-    let msa = MSA::from_aligned(
+    let info_gaps = MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("one", b"CCCCCC--"),
             record!("two", b"--AAAAAA"),
             record!("three", b"TTT--TTT"),
             record!("four", b"G-GGGG-G"),
         ]),
-        &tree,
+        tree,
     )
     .unwrap();
-    let info_gaps = PhyloInfo { msa, tree };
 
     let c_ambig = SCB::new(model.clone(), info_ambig).build().unwrap();
     let c_gaps = SCB::new(model, info_gaps).build().unwrap();
@@ -656,12 +649,11 @@ fn dna_gaps_as_ambigs() {
 #[cfg(test)]
 fn setup_phylo_info_single_leaf() -> PhyloInfo<MSA> {
     let tree = tree!("(A0:1.0);");
-    let msa = MSA::from_aligned(
+    MSA::from_aligned(
         Sequences::new_unchecked(vec![record!("A0", b"AAAAAA")]),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[cfg(test)]
@@ -715,7 +707,7 @@ fn dna_cb_example_likelihood() {
 #[cfg(test)]
 fn setup_mol_evo_example_phylo_info() -> PhyloInfo<MSA> {
     let tree = tree!("(((one:0.2,two:0.2):0.1,three:0.2):0.1,(four:0.2,five:0.2):0.1);");
-    let msa = MSA::from_aligned(
+    MSA::from_aligned(
         Sequences::new_unchecked(vec![
             record!("one", b"T"),
             record!("two", b"C"),
@@ -723,10 +715,9 @@ fn setup_mol_evo_example_phylo_info() -> PhyloInfo<MSA> {
             record!("four", b"C"),
             record!("five", b"C"),
         ]),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[test]
@@ -840,15 +831,9 @@ fn simple_reroot_info(alphabet: &'static Alphabet) -> (PhyloInfo<MSA>, PhyloInfo
         alphabet,
     );
 
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs.clone(), tree).unwrap();
     let tree_rerooted = tree!("(A:1.0,(B:2.0,C:3.0):1.0):0.0;");
-    let info_rerooted = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree_rerooted).unwrap(),
-        tree: tree_rerooted,
-    };
+    let info_rerooted = MSA::from_aligned(seqs, tree_rerooted).unwrap();
 
     (info, info_rerooted)
 }
@@ -918,14 +903,8 @@ fn logl_correct_w_diff_info<Q: QMatrix>(model: SubstModel<Q>, llik1: f64, llik2:
         record!("D", b"P"),
     ]);
 
-    let info1 = PhyloInfo {
-        msa: MSA::from_aligned(seqs.clone(), &tree1).unwrap(),
-        tree: tree1,
-    };
-    let info2 = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree2).unwrap(),
-        tree: tree2,
-    };
+    let info1 = MSA::from_aligned(seqs.clone(), tree1).unwrap();
+    let info2 = MSA::from_aligned(seqs, tree2).unwrap();
 
     let c1 = SCB::new(model.clone(), info1).build().unwrap();
     let c2 = SCB::new(model, info2).build().unwrap();
@@ -966,10 +945,7 @@ fn one_site_one_char_template<Q: QMatrix>(model: SubstModel<Q>) {
         Q::alphabet(),
     );
     let tree = tree!("((one:2,two:2):1,(three:1,four:1):2);");
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(sequences, &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(sequences, tree).unwrap();
 
     let c = SCB::new(model, info).build().unwrap();
 
@@ -1000,10 +976,7 @@ fn dna_gaps_against_phyml() {
     let seqs = Sequences::new_unchecked(
         read_sequences(Path::new("./data/").join("sequences_DNA1.fasta")).unwrap(),
     );
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs, tree).unwrap();
     let jc69 = SubstModel::<JC69>::default();
     let c = SCB::new(jc69, info).build().unwrap();
 
@@ -1023,10 +996,7 @@ fn dna_single_char_gaps_against_phyml() {
         record!("C", b"A"),
         record!("D", b"T"),
     ]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree: tree.clone(),
-    };
+    let info = MSA::from_aligned(seqs, tree.clone()).unwrap();
     let c = SCB::new(jc69.clone(), info).build().unwrap();
     assert_relative_eq!(c.cost(), -2.920437792326963); // Compare against PhyML
 
@@ -1036,10 +1006,7 @@ fn dna_single_char_gaps_against_phyml() {
         record!("C", b"X"),
         record!("D", b"X"),
     ]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree: tree.clone(),
-    };
+    let info = MSA::from_aligned(seqs, tree.clone()).unwrap();
 
     let c = SCB::new(jc69.clone(), info).build().unwrap();
     assert_relative_eq!(c.cost(), 0.0, epsilon = 1e-10); // Compare against PhyML
@@ -1050,10 +1017,7 @@ fn dna_single_char_gaps_against_phyml() {
         record!("C", b"X"),
         record!("D", b"T"),
     ]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree: tree.clone(),
-    };
+    let info = MSA::from_aligned(seqs, tree.clone()).unwrap();
     let c = SCB::new(jc69.clone(), info).build().unwrap();
     assert_relative_eq!(c.cost(), -1.38629, epsilon = 1e-5); // Compare against PhyML
 
@@ -1063,10 +1027,7 @@ fn dna_single_char_gaps_against_phyml() {
         record!("C", b"A"),
         record!("D", b"T"),
     ]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree: tree.clone(),
-    };
+    let info = MSA::from_aligned(seqs, tree.clone()).unwrap();
     let c = SCB::new(jc69.clone(), info).build().unwrap();
     assert_relative_eq!(c.cost(), -2.77259, epsilon = 1e-5); // Compare against PhyML
 
@@ -1076,10 +1037,7 @@ fn dna_single_char_gaps_against_phyml() {
         record!("C", b"A"),
         record!("D", b"T"),
     ]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs, tree).unwrap();
     let c = SCB::new(jc69.clone(), info).build().unwrap();
     assert_relative_eq!(c.cost(), -2.92044, epsilon = 1e-5); // Compare against PhyML
 }
@@ -1094,10 +1052,7 @@ fn dna_ambig_chars_against_phyml() {
         record!("C", b"A"),
         record!("D", b"T"),
     ]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs, tree).unwrap();
     let c = SCB::new(jc69, info).build().unwrap();
     assert_relative_eq!(c.cost(), -21.28936836, epsilon = 1e-7);
 }
@@ -1107,10 +1062,7 @@ fn dna_x_simple_fully_likely() {
     let jc69 = SubstModel::<JC69>::default();
     let tree = tree!("(A:0.05,B:0.0005):0.0;");
     let seqs = Sequences::new_unchecked(vec![record!("A", b"X"), record!("B", b"X")]);
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs, tree).unwrap();
     let c = SCB::new(jc69.clone(), info.clone()).build().unwrap();
     assert_relative_eq!(c.cost(), 0.0, epsilon = 1e-15);
 }
@@ -1127,10 +1079,7 @@ fn x_fully_likely_template<Q: QMatrix>(model: SubstModel<Q>) {
         ],
         Q::alphabet(),
     );
-    let info = PhyloInfo {
-        msa: MSA::from_aligned(seqs, &tree).unwrap(),
-        tree,
-    };
+    let info = MSA::from_aligned(seqs, tree).unwrap();
     let c = SCB::new(model, info).build().unwrap();
     assert_relative_eq!(c.cost(), 0.0, epsilon = 1e-5);
 }
@@ -1272,7 +1221,7 @@ fn dna_zero_diag_scores() {
 #[cfg(test)]
 fn setup_test_info(alphabet: &'static Alphabet) -> PhyloInfo<MSA> {
     let tree = tree!("(((A:1.0,B:1.0)E:2.0,(C:1.0,D:1.0)F:2.0)G:3.0);");
-    let msa = MSA::from_aligned(
+    MSA::from_aligned(
         Sequences::with_alphabet_unchecked(
             vec![
                 record!("A", b"CTATATATAC"),
@@ -1282,10 +1231,9 @@ fn setup_test_info(alphabet: &'static Alphabet) -> PhyloInfo<MSA> {
             ],
             alphabet,
         ),
-        &tree,
+        tree,
     )
-    .unwrap();
-    PhyloInfo { msa, tree }
+    .unwrap()
 }
 
 #[cfg(test)]

@@ -235,7 +235,6 @@ mod private_tests {
     use crate::alphabets::Alphabet;
     use crate::likelihood::TreeSearchCost;
     use crate::parsimony::{DolloParsimonyCost, GapCost, SimpleScoring};
-    use crate::phylo_info::PhyloInfo;
     use crate::{record_wo_desc as record, tree};
 
     #[test]
@@ -249,10 +248,7 @@ mod private_tests {
 
         let tree = tree!("((A:1.0,B:1.0):1.0,(C:1.0,D:1.0):1.0):0.0;");
 
-        let info = PhyloInfo {
-            msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-            tree,
-        };
+        let info = MSA::from_aligned(seqs.clone(), tree).unwrap();
         let cost = DolloParsimonyCost::new(info);
 
         assert_eq!(cost.score(), 4.0);
@@ -273,10 +269,7 @@ mod private_tests {
 
         let tree = tree!("((A:1.0,B:1.0):1.0,(C:1.0,D:1.0):1.0):0.0;");
 
-        let info = PhyloInfo {
-            msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-            tree,
-        };
+        let info = MSA::from_aligned(seqs.clone(), tree).unwrap();
         let scoring = SimpleScoring::new(1.0, GapCost::new(2.5, 1.0));
         let cost = DolloParsimonyCost::with_scoring(info, scoring.clone());
 
@@ -294,10 +287,7 @@ mod private_tests {
 
         let tree = tree!("((A:1.0,B:1.0):1.0,(C:1.0,D:1.0):1.0):0.0;");
 
-        let info = PhyloInfo {
-            msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-            tree,
-        };
+        let info = MSA::from_aligned(seqs.clone(), tree).unwrap();
 
         let cost = DolloParsimonyCost::new(info.clone());
         assert_eq!(cost.score(), 5.0);
@@ -317,15 +307,12 @@ mod private_tests {
 
         let tree = tree!("((A:1.0,B:1.0)I1:1.0,(C:1.0,D:1.0)I4:1.0)I0:0.0;");
 
-        let info = PhyloInfo {
-            msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-            tree: tree.clone(),
-        };
+        let info = MSA::from_aligned(seqs.clone(), tree).unwrap();
         let mut cost = DolloParsimonyCost::new(info.clone());
 
         assert_eq!(cost.score(), 1.0);
 
-        cost.update_tree(tree);
+        cost.update_tree(info.tree);
         assert_eq!(cost.score(), 1.0);
     }
 
@@ -343,10 +330,7 @@ mod private_tests {
 
         let tree = tree!("(((D:1,(A:1,C:0.5)I1:0.5)I4:1,B:2)I0:0);");
 
-        let info = PhyloInfo {
-            msa: MSA::from_aligned(seqs.clone(), &tree).unwrap(),
-            tree: tree.clone(),
-        };
+        let info = MSA::from_aligned(seqs.clone(), tree.clone()).unwrap();
 
         let scoring = SimpleScoring::new(1.0, GapCost::new(2.0, 1.0));
         let mut cost = DolloParsimonyCost::with_scoring(info, scoring);

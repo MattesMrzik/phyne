@@ -218,8 +218,7 @@ mod private_tests {
             record!("B1", b"-ARAAAWD"),
             record!("I1", b"AAA---AD"),
         ]);
-        let msa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
-        let phylo_info = PhyloInfo { msa, tree };
+        let phylo_info = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
         let lambda = 1.0;
         let mu = 1.1;
         let r = 0.5;
