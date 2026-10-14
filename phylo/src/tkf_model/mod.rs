@@ -182,6 +182,38 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     }
 }
 
+/// Builder for [`TKFCost`], i.e., the combined TKF indel and substitution model cost of an
+/// [ancestral alignment](`AncestralAlignment`) and a [tree](`Tree`).
+///
+/// # Example
+/// ```rust
+/// use phylo::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
+/// use phylo::phylo_info::PhyloInfo;
+/// use phylo::substitution_models::{dna_models::GTR, SubstModel};
+/// use phylo::tkf_model::{TKF92IndelModel, TKFCostBuilder};
+/// use phylo::{record_wo_desc as record, tree};
+///
+/// # use phylo::Result;
+/// # fn main() -> Result<()> {
+/// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
+/// let msa = MASA::from_aligned_with_ancestral(
+///     Sequences::new(vec![
+///         record!("A1", b"--GTGGA---"),
+///         record!("B2", b"-------NNA"),
+///         record!("I3", b"--T-------"),
+///         record!("C4", b"AGG-------"),
+///         record!("R5", b"--A-------"),
+///     ])?,
+///     &tree,
+/// )?;
+/// let phylo = PhyloInfo { msa, tree };
+/// let subst_model = SubstModel::<GTR>::new(&[], &[]);
+/// let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
+/// let cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo).build()?;
+/// assert_eq!(cost.masa().seqs().len(), 3);
+/// assert_eq!(cost.masa().ancestral_seqs().len(), 2);
+/// # Ok(()) }
+/// ```
 pub struct TKFCostBuilder<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> {
     subst_model: SubstModel<Q>,
     tkf_indel_model: T,

@@ -394,6 +394,37 @@ impl<T: TKFModel, AA: AncestralAlignment> TKFIndelCost<T, AA> {
     }
 }
 
+/// Builder for [`TKFIndelCost`], i.e., the TKF indel cost of an
+/// [ancestral alignment](`AncestralAlignment`) and a [tree](`crate::tree::Tree`)
+/// under a [`TKFModel`], without a substitution model.
+///
+/// # Example
+/// ```rust
+/// use phylo::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
+/// use phylo::likelihood::ModelSearchCost;
+/// use phylo::phylo_info::PhyloInfo;
+/// use phylo::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder};
+/// use phylo::{record_wo_desc as record, tree};
+///
+/// # use phylo::Result;
+/// # fn main() -> Result<()> {
+/// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
+/// let msa = MASA::from_aligned_with_ancestral(
+///     Sequences::new(vec![
+///         record!("A1", b"--GTGGA---"),
+///         record!("B2", b"-------NNA"),
+///         record!("I3", b"--T-------"),
+///         record!("C4", b"AGG-------"),
+///         record!("R5", b"--A-------"),
+///     ])?,
+///     &tree,
+/// )?;
+/// let phylo = PhyloInfo { msa, tree };
+/// let indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
+/// let cost = TKFIndelCostBuilder::new(indel_model, phylo).build();
+/// assert!(cost.cost().is_finite());
+/// # Ok(()) }
+/// ```
 pub struct TKFIndelCostBuilder<T: TKFModel, AA: AncestralAlignment> {
     model: T,
     phylo: PhyloInfo<AA>,

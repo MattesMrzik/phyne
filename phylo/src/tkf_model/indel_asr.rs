@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::num::NonZeroUsize;
 
 use log::info;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand_pcg::Pcg32;
 
 use crate::alignment::{Alignment, AncestralAlignment};
@@ -17,7 +17,40 @@ use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFIndelCostBuilder, T
 use crate::tree::{NodeIdx, Tree};
 use crate::{bail, Result, DEFAULT_EPSILON};
 
-pub struct TKFIndelASR<T: TKFModel, R: Rng + SeedableRng = Pcg32> {
+/// Infers the homology path (the indel points, i.e. the presence/absence of characters)
+/// at the ancestral nodes of a [tree](`Tree`) under a [TKF](`TKFModel`) indel model.
+///
+/// Starting from an initial guess of the indel points, it iteratively re-estimates the
+/// ancestral gap/non-gap pattern (see [`EdgeSeqsReestimator`]) until convergence and,
+/// optionally, optimises the indel model parameters. The result is an
+/// [ancestral alignment](`AncestralAlignment`) whose ancestral characters are wild cards
+/// ([`AMB_CHAR`](`crate::alphabets::AMB_CHAR`)), encoding the homology path.
+///
+/// # Example
+/// ```rust
+/// use phylo::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
+/// use phylo::tkf_model::{TKF92IndelModel, TKFIndelInf};
+/// use phylo::{record_wo_desc as record, tree};
+///
+/// # use phylo::Result;
+/// # fn main() -> Result<()> {
+/// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+/// let msa = MSA::from_aligned(
+///     Sequences::new(vec![
+///         record!("A", b"ACGT"),
+///         record!("B", b"ACGT"),
+///         record!("C", b"ACGT"),
+///     ])?,
+///     &tree,
+/// )?;
+/// let inf = TKFIndelInf::<TKF92IndelModel, _>::default();
+/// let (ancestral_alignment, _model): (MASA, TKF92IndelModel) =
+///     inf.estimate_homology_path(&msa, tree)?;
+/// assert_eq!(ancestral_alignment.seqs().len(), 3);
+/// assert_eq!(ancestral_alignment.ancestral_seqs().len(), 2);
+/// # Ok(()) }
+/// ```
+pub struct TKFIndelInf<T: TKFModel, R: Rng + SeedableRng + RngCore> {
     epsilon: f64,
     max_iterations: Option<usize>,
     param_opt: bool,
@@ -26,7 +59,7 @@ pub struct TKFIndelASR<T: TKFModel, R: Rng + SeedableRng = Pcg32> {
     rng: RefCell<RandomGenerator<R>>,
 }
 
-impl<T: TKFModel> Default for TKFIndelASR<T, Pcg32> {
+impl<T: TKFModel> Default for TKFIndelInf<T, Pcg32> {
     fn default() -> Self {
         Self {
             epsilon: DEFAULT_EPSILON,
@@ -38,7 +71,7 @@ impl<T: TKFModel> Default for TKFIndelASR<T, Pcg32> {
     }
 }
 
-impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelASR<T, R> {
+impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
     // TODO: what other ctors do we want?, perhaps some with default model but passing the other params
     pub fn new_with_attr(
         indel_model: T,
@@ -74,8 +107,8 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelASR<T, R> {
     }
 }
 
-impl<T: TKFModel, R: Rng + SeedableRng, A: Alignment, AA: AncestralAlignment>
-    AncestralSequenceReconstruction<A, AA> for TKFIndelASR<T, R>
+impl<T: TKFModel, R: Rng + SeedableRng + RngCore, A: Alignment, AA: AncestralAlignment>
+    AncestralSequenceReconstruction<A, AA> for TKFIndelInf<T, R>
 {
     fn reconstruct_ancestral_seqs_unchecked(
         &self,
@@ -84,29 +117,31 @@ impl<T: TKFModel, R: Rng + SeedableRng, A: Alignment, AA: AncestralAlignment>
         leaf_alignment: &A,
         tree: &Tree,
     ) -> AA {
-        self.indel_asr(leaf_alignment, tree.clone()).unwrap().0
+        self.estimate_homology_path(leaf_alignment, tree.clone())
+            .unwrap()
+            .0
     }
 
     fn reconstruct_ancestral_seqs(&self, leaf_alignment: &A, tree: &Tree) -> Result<AA> {
         // TODO: set missing ids
-        let result = self.indel_asr(leaf_alignment, tree.clone())?;
+        let result = self.estimate_homology_path(leaf_alignment, tree.clone())?;
         Ok(result.0)
     }
 }
 
-impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelASR<T, R> {
-    pub fn indel_asr<A: Alignment, AA: AncestralAlignment>(
+impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
+    pub fn estimate_homology_path<A: Alignment, AA: AncestralAlignment>(
         &self,
         leaf_alignment: &A,
         tree: Tree,
     ) -> Result<(AA, T)> {
         let asr = ParsimonyPresenceAbsence {};
         let initial_indel_points = asr.reconstruct_ancestral_seqs_unchecked(leaf_alignment, &tree);
-        self.indel_asr_from_initial(initial_indel_points, tree)
+        self.estimate_homology_path_from_initial(initial_indel_points, tree)
     }
 
     // TODO: this should take a phylo info and also return it
-    pub fn indel_asr_from_initial<AA: AncestralAlignment>(
+    pub fn estimate_homology_path_from_initial<AA: AncestralAlignment>(
         &self,
         initial_indel_points: AA,
         tree: Tree,
