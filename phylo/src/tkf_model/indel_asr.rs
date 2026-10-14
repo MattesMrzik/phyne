@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::num::NonZeroUsize;
 
 use log::info;
 use rand::{Rng, SeedableRng};
+use rand_pcg::Pcg32;
 
 use crate::alignment::{Alignment, AncestralAlignment};
 use crate::asr::AncestralSequenceReconstruction;
@@ -15,34 +17,35 @@ use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFIndelCostBuilder, T
 use crate::tree::{NodeIdx, Tree};
 use crate::{bail, Result, DEFAULT_EPSILON};
 
-pub struct TKFIndelASR<T: TKFModel> {
+pub struct TKFIndelASR<T: TKFModel, R: Rng + SeedableRng = Pcg32> {
     epsilon: f64,
     max_iterations: Option<usize>,
     param_opt: bool,
     indel_model: T,
-    seed: Option<u64>, // optional seed for reproducibility when breaking ties in the re-estimation process
+    // rng for reproducibility when breaking ties in the re-estimation process
+    rng: RefCell<RandomGenerator<R>>,
 }
 
-impl<T: TKFModel> Default for TKFIndelASR<T> {
+impl<T: TKFModel> Default for TKFIndelASR<T, Pcg32> {
     fn default() -> Self {
         Self {
             epsilon: DEFAULT_EPSILON,
             max_iterations: None,
             param_opt: false,
             indel_model: T::default(),
-            seed: None,
+            rng: RefCell::new(DefaultGenerator::default()),
         }
     }
 }
 
-impl<T: TKFModel> TKFIndelASR<T> {
-    // what other ctors do we want?, perhaps some with default model but passing the other params
+impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelASR<T, R> {
+    // TODO: what other ctors do we want?, perhaps some with default model but passing the other params
     pub fn new_with_attr(
         indel_model: T,
         epsilon: f64,
         max_iterations: Option<usize>,
         param_opt: bool,
-        seed: Option<u64>,
+        rng: RandomGenerator<R>,
     ) -> Result<Self> {
         if epsilon < 0.0 {
             bail!(
@@ -66,13 +69,13 @@ impl<T: TKFModel> TKFIndelASR<T> {
             max_iterations,
             param_opt,
             indel_model,
-            seed,
+            rng: RefCell::new(rng),
         })
     }
 }
 
-impl<T: TKFModel, A: Alignment, AA: AncestralAlignment> AncestralSequenceReconstruction<A, AA>
-    for TKFIndelASR<T>
+impl<T: TKFModel, R: Rng + SeedableRng, A: Alignment, AA: AncestralAlignment>
+    AncestralSequenceReconstruction<A, AA> for TKFIndelASR<T, R>
 {
     fn reconstruct_ancestral_seqs_unchecked(
         &self,
@@ -91,7 +94,7 @@ impl<T: TKFModel, A: Alignment, AA: AncestralAlignment> AncestralSequenceReconst
     }
 }
 
-impl<T: TKFModel> TKFIndelASR<T> {
+impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelASR<T, R> {
     pub fn indel_asr<A: Alignment, AA: AncestralAlignment>(
         &self,
         leaf_alignment: &A,
@@ -108,10 +111,6 @@ impl<T: TKFModel> TKFIndelASR<T> {
         initial_indel_points: AA,
         tree: Tree,
     ) -> Result<(AA, T)> {
-        let mut rng = match self.seed {
-            Some(seed) => DefaultGenerator::new(seed),
-            None => DefaultGenerator::default(),
-        };
         let max_iters = NonZeroUsize::new(self.max_iterations.unwrap_or(usize::MAX)).unwrap();
         let stop_condition = StopCondition::max_iter_epsilon(max_iters, self.epsilon);
         let intermediate_stop_condition = StopCondition::epsilon(self.epsilon);
@@ -134,7 +133,7 @@ impl<T: TKFModel> TKFIndelASR<T> {
             if self.param_opt {
                 cost = Self::optimise_params(cost, intermediate_stop_condition)?;
             }
-            curr_cost = Self::reestimate_edges(&mut cost, &mut rng, curr_cost);
+            curr_cost = Self::reestimate_edges(&mut cost, &mut self.rng.borrow_mut(), curr_cost);
             delta = curr_cost - prev_cost;
             // TODO: output also checkpointed msa and params
         }
@@ -159,7 +158,7 @@ impl<T: TKFModel> TKFIndelASR<T> {
     /// Re-estimates the ancestral sequences at all non-root internal nodes of the tree,
     /// keeping all other sequences and the tree fixed.
     /// Returns the resulting cost after re-estimation.
-    fn reestimate_edges<AA: AncestralAlignment, R: Rng + SeedableRng>(
+    fn reestimate_edges<AA: AncestralAlignment>(
         cost: &mut TKFIndelCost<T, AA>,
         rng: &mut RandomGenerator<R>,
         mut curr_cost: f64,
