@@ -164,8 +164,6 @@ impl TKFModel for TKF92IndelModelAddBlocks {
         let blocks = blocks_of_alignment(msa);
         merge_fragmentation_with_blocks(&blocks, &self.additional_blocks)
     }
-
-
 }
 
 #[cfg(test)]
