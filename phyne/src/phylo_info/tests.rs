@@ -634,7 +634,7 @@ fn prune_empty_leaves_nothing_to_prune() {
     // No gap-only leaves -> the result is unchanged.
     let tree = tree!("(((A1:1.0,B2:2.0)I3:3.0,C4:4.0)R5:5.0);");
     let phylo = phylo_from_records(
-        tree,
+        tree.clone(),
         vec![
             ("A1", b"--GTGGA---"),
             ("B2", b"-------NNA"),
@@ -644,9 +644,12 @@ fn prune_empty_leaves_nothing_to_prune() {
         ],
     );
     let phylo = phylo.prune_empty_leaves().unwrap();
-    let PhyloInfo { msa, tree } = phylo;
+    let PhyloInfo {
+        msa,
+        tree: new_tree,
+    } = phylo;
 
-    assert_eq!(tree.to_newick(), tree.to_newick());
+    assert_eq!(tree.to_newick(), new_tree.to_newick());
     assert_eq!(msa.seq_count(), 3);
     assert_eq!(msa.ancestral_seqs().len(), 2);
 }
