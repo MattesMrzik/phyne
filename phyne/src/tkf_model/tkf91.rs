@@ -219,6 +219,8 @@ impl<Q: QMatrix, AA: AncestralAlignment> TKF91CostBuilder<Q, AA> {
 
 #[cfg(test)]
 mod private_tests {
+    use approx::assert_relative_eq;
+
     use super::*;
 
     #[test]
@@ -253,5 +255,12 @@ mod private_tests {
         let new_mu = 2.1;
         model.set_param(usize::from(TKF91Parameters::Mu), new_mu);
         assert_eq!(model.mu(), new_mu);
+    }
+
+    #[test]
+    fn tkf91_expected_root_length() {
+        let model = TKF91IndelModel::new(1.1, 2.0);
+        let ratio = model.lambda() / model.mu();
+        assert_relative_eq!(model.expected_root_length(), ratio / (1.0 - ratio));
     }
 }

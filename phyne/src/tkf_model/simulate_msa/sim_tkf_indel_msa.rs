@@ -944,13 +944,14 @@ mod private_tests {
 
     #[test]
     fn tkf92_indel_capping() {
-        let lambda = 0.19;
-        let mu = 0.2;
+        let lambda = 1.00;
+        let mu = 1.1;
         let r = 0.5;
         let tkf_model = TKF92IndelModel::new(lambda, mu, r);
         let tree = tree!("(A:1.0,B:1.0)R:1.0;");
         let max_len = Some(0); // Cap at 0 insertions on branches
-        let simulator = TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_len).unwrap();
+        let mut simulator = TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_len).unwrap();
+        simulator.root_length(RootLength::Defined(10000));
         let mut rng = DefaultGenerator::new(123);
         let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
         let msa = result.phylo.msa;
@@ -964,5 +965,24 @@ mod private_tests {
                 col_idx
             );
         }
+    }
+
+    #[test]
+    fn tkf92_indel_capping_hits_cap_for_all_fates() {
+        let tkf_model = TKF92IndelModel::new(0.19, 0.2, 0.5);
+        let tree = tree!("(A:1.0,B:1.0)R:1.0;");
+        // Cap at 0 inserted fragments, so both fates always fall through to the capping branch.
+        let simulator = TKFIndelMSASimulator::new(tkf_model, tree, Some(0)).unwrap();
+
+        // A uniform sample of 1.0 can never be smaller than a cumulative probability, so the
+        // sampling loops are exhausted and the insertion length is capped.
+        assert!(matches!(
+            simulator.sample_homolog_fate(1.0, 1.0),
+            LinkFate::Homolog(0)
+        ));
+        assert!(matches!(
+            simulator.sample_non_homolog_fate(1.0, 1.0),
+            LinkFate::NonHomolog(0)
+        ));
     }
 }
