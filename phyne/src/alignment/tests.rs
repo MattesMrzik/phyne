@@ -8,6 +8,7 @@ use crate::alignment::{
 };
 use crate::alphabets::{Alphabet, AMINOACIDS, NUCLEOTIDES};
 use crate::io::read_sequences;
+use crate::phylo_info::PhyloInfo;
 use crate::tree::{
     NodeIdx::{Internal as I, Leaf as L},
     Tree,
@@ -587,13 +588,15 @@ fn remove_extinct_columns_masa() {
         assert_eq!(rec.seq().len(), 7, "sequence length mismatch");
     }
 
-    let mut masa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
+    let mut phylo = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
 
     // sanity checks before removal (the second column is removed when the MASA is created)
-    assert_eq!(masa.len(), 6, "lens differ for initial length");
+    assert_eq!(phylo.msa.len(), 6, "lens differ for initial length");
     // after removing the two extinct columns the length should be 4
-    masa.remove_extinct_columns();
-    assert_eq!(masa.len(), 4, "lens differ after removal");
+    phylo.msa.remove_extinct_columns();
+    assert_eq!(phylo.msa.len(), 4, "lens differ after removal");
+
+    let PhyloInfo { msa: masa, tree } = phylo;
 
     let a = &tree.idx("A");
     assert_eq!(masa.leaf_maps().get(a).unwrap(), &align!(b"N-N-"), "A");
@@ -624,12 +627,11 @@ fn into_alignment_masa_to_msa() {
         record_wo_desc!("R", b"A-ACG-T"),
     ];
     let seqs = Sequences::new(records).unwrap();
-    let masa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
+    let phylo = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
 
     // columns 2 and 5 are only gaps, so they are removed during the creation
-    assert_eq!(masa.len(), 5);
+    assert_eq!(phylo.msa.len(), 5);
 
-    let phylo = PhyloInfo { msa: masa, tree };
     let phylo: PhyloInfo<MSA> = phylo.discard_ancestral_seqs();
 
     assert_eq!(phylo.msa.seq_count(), 3);

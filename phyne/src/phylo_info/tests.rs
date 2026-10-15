@@ -7,7 +7,6 @@ use crate::alignment::{Alignment, AncestralAlignment, Sequences, MASA, MSA};
 use crate::alphabets::{Alphabet, NUCLEOTIDES};
 use crate::io::read_sequences;
 use crate::phylo_info::{PhyloInfo, PhyloInfoBuilder as PIB};
-use crate::substitution_models::FreqVector;
 use crate::tree::Tree;
 use crate::{frequencies, record_wo_desc as record, tree, Error};
 
@@ -516,7 +515,7 @@ fn masa_is_not_dollo() {
 }
 
 #[cfg(test)]
-fn phylo_from_records(tree: &Tree, records: Vec<(&str, &[u8])>) -> PhyloInfo<MASA> {
+fn phylo_from_records(tree: Tree, records: Vec<(&str, &[u8])>) -> PhyloInfo<MASA> {
     let seqs = Sequences::new(
         records
             .into_iter()
@@ -524,19 +523,15 @@ fn phylo_from_records(tree: &Tree, records: Vec<(&str, &[u8])>) -> PhyloInfo<MAS
             .collect(),
     )
     .unwrap();
-    let masa = MASA::from_aligned_with_ancestral(seqs, tree).unwrap();
-    PhyloInfo {
-        msa: masa.clone(),
-        tree: tree.clone(),
-    }
+    MASA::from_aligned_with_ancestral(seqs, tree).unwrap()
 }
 
 #[test]
 fn prune_empty_leaves_leaf_only() {
     // C4 consists only of gaps -> prune C4 and its parent R5, the root collapses to I3.
     let tree = tree!("(((A1:1.0,B2:2.0)I3:3.0,C4:4.0)R5:5.0);");
-    let mut phylo = phylo_from_records(
-        &tree,
+    let phylo = phylo_from_records(
+        tree,
         vec![
             ("A1", b"--GTGGA---"),
             ("B2", b"-------NNA"),
@@ -545,7 +540,7 @@ fn prune_empty_leaves_leaf_only() {
             ("R5", b"--A-------"),
         ],
     );
-    phylo.prune_empty_leaves().unwrap();
+    let phylo = phylo.prune_empty_leaves().unwrap();
 
     let PhyloInfo { msa, tree } = phylo;
 
@@ -568,8 +563,8 @@ fn prune_empty_leaves_leaf_only() {
 fn prune_empty_leaves_parent_removed() {
     // A1 consists only of gaps -> prune A1 and its parent I3; B2 takes over I3's branch.
     let tree = tree!("(((A1:1.0,B2:2.0)I3:3.0,C4:4.0)R5:5.0);");
-    let mut phylo = phylo_from_records(
-        &tree,
+    let phylo = phylo_from_records(
+        tree,
         vec![
             ("A1", b"----------"),
             ("B2", b"-------NNA"),
@@ -578,7 +573,7 @@ fn prune_empty_leaves_parent_removed() {
             ("R5", b"--A-------"),
         ],
     );
-    phylo.prune_empty_leaves().unwrap();
+    let phylo = phylo.prune_empty_leaves().unwrap();
     let PhyloInfo { msa, tree } = phylo;
 
     assert_eq!(msa.seq_count(), 2); // B2, C4
@@ -597,8 +592,8 @@ fn prune_empty_leaves_single_leaf_bails() {
     // A1 and B2 both consist only of gaps -> pruning would leave a single sequence (C4)
     // with characters, which is not a meaningful tree.
     let tree = tree!("(((A1:1.0,B2:2.0)I3:3.0,C4:4.0)R5:5.0);");
-    let mut phylo = phylo_from_records(
-        &tree,
+    let phylo = phylo_from_records(
+        tree,
         vec![
             ("A1", b"----------"),
             ("B2", b"----------"),
@@ -618,8 +613,8 @@ fn prune_empty_leaves_all_gap_bails() {
     // All sequences consist only of gaps -> pruning would leave no sequences with
     // characters at all.
     let tree = tree!("(((A1:1.0,B2:2.0)I3:3.0,C4:4.0)R5:5.0);");
-    let mut phylo = phylo_from_records(
-        &tree,
+    let phylo = phylo_from_records(
+        tree,
         vec![
             ("A1", b"----------"),
             ("B2", b"----------"),
@@ -638,8 +633,8 @@ fn prune_empty_leaves_all_gap_bails() {
 fn prune_empty_leaves_nothing_to_prune() {
     // No gap-only leaves -> the result is unchanged.
     let tree = tree!("(((A1:1.0,B2:2.0)I3:3.0,C4:4.0)R5:5.0);");
-    let mut phylo = phylo_from_records(
-        &tree,
+    let phylo = phylo_from_records(
+        tree,
         vec![
             ("A1", b"--GTGGA---"),
             ("B2", b"-------NNA"),
@@ -648,7 +643,7 @@ fn prune_empty_leaves_nothing_to_prune() {
             ("R5", b"--A-------"),
         ],
     );
-    phylo.prune_empty_leaves().unwrap();
+    let phylo = phylo.prune_empty_leaves().unwrap();
     let PhyloInfo { msa, tree } = phylo;
 
     assert_eq!(tree.to_newick(), tree.to_newick());
@@ -661,8 +656,8 @@ fn prune_empty_leaves_comb() {
     // G and N1 consist only of gaps -> removing G collapses I1 (N1 takes over I1's
     // branch), removing N1 collapses I2 (N2 takes over I2's branch).
     let tree = tree!("((((G:1.0,N1:1.0)I1:1.0,N2:1.0)I2:1.0,N3:1.0)I3:1.0,N4:1.0)R:1.0;");
-    let mut phylo = phylo_from_records(
-        &tree,
+    let phylo = phylo_from_records(
+        tree,
         vec![
             ("G", b"----"),
             ("N1", b"----"),
@@ -675,7 +670,7 @@ fn prune_empty_leaves_comb() {
             ("R", b"---A"),
         ],
     );
-    phylo.prune_empty_leaves().unwrap();
+    let phylo = phylo.prune_empty_leaves().unwrap();
     let PhyloInfo { msa, tree } = phylo;
 
     assert_eq!(msa.seq_count(), 3); // N2, N3, N4

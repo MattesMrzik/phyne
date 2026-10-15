@@ -202,10 +202,10 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     ///
     /// # Example
     /// ```
-    /// use phylo::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
-    /// use phylo::phylo_info::PhyloInfo;
-    /// use phylo::{record_wo_desc, tree};
-    /// # use phylo::Result;
+    /// use phyne::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
+    /// use phyne::phylo_info::PhyloInfo;
+    /// use phyne::{record_wo_desc, tree};
+    /// # use phyne::Result;
     ///
     /// # fn main() -> Result<()> {
     /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R:1.0;");
@@ -216,12 +216,11 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     ///     record_wo_desc!("I", b"A-ACG-T"),
     ///     record_wo_desc!("R", b"A-ACG-T"),
     /// ];
-    /// let masa = MASA::from_aligned_with_ancestral(Sequences::new(records)?, &tree)?;
+    /// let phylo = MASA::from_aligned_with_ancestral(Sequences::new(records)?, tree)?;
     ///
     /// // columns 2 and 5 are only gaps, so they are removed during the creation
-    /// assert_eq!(masa.len(), 5);
+    /// assert_eq!(phylo.msa.len(), 5);
     ///
-    /// let phylo = PhyloInfo { msa: masa, tree };
     /// let phylo: PhyloInfo<MSA> = phylo.discard_ancestral_seqs();
     ///
     /// assert_eq!(phylo.msa.seq_count(), 3);
@@ -242,10 +241,7 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
         }
         let mut seqs = Sequences::with_alphabet_unchecked(leaf_records, self.msa.seqs().alphabet());
         seqs.remove_gap_cols();
-        PhyloInfo {
-            msa: A::from_aligned_unchecked(seqs, &self.tree),
-            tree: self.tree,
-        }
+        A::from_aligned_unchecked(seqs, self.tree)
     }
 
     /// Removes leaves whose aligned sequence consists only of gaps from both the tree and the
@@ -254,12 +250,12 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     /// # Errors
     /// * If pruning would leave fewer than two sequences with characters, which is not a
     ///   meaningful tree.
-    pub fn prune_empty_leaves(&mut self) -> Result<()> {
+    pub fn prune_empty_leaves(self) -> Result<Self> {
         // Collect the leaves whose aligned sequence consists only of gaps. For each of them
         // the parent node is also removed from the MASA when the tree is pruned.
         let leaves_to_remove = self.all_gap_leaves();
         if leaves_to_remove.is_empty() {
-            return Ok(());
+            return Ok(self);
         }
         if self.tree.n - leaves_to_remove.len() < 2 {
             bail!(
@@ -273,13 +269,11 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
         let pruned_tree = prune_empty_leaves_from_tree(&self.tree, &leaves_to_remove)
             .unwrap_or_else(|e| bug!("Pruning empty leaves failed", e));
         let original_len = self.msa.len();
-        let masa: AA = rebuild_masa(&aligned, &pruned_tree)
+        let phylo: PhyloInfo<AA> = rebuild_masa(&aligned, pruned_tree)
             .unwrap_or_else(|e| bug!("Rebuilding MASA after pruning empty leaves failed", e));
-        debug_assert_eq!(masa.len(), original_len);
-        self.tree = pruned_tree;
-        self.msa = masa;
+        debug_assert_eq!(phylo.msa.len(), original_len);
         // Pruning only removes rows, not columns, so the fragmentation stays in sync.
-        Ok(())
+        Ok(phylo)
     }
 
     /// Returns the leaves whose aligned sequence consists only of gaps.
@@ -424,7 +418,10 @@ fn rebuild_tree(pruned: &Tree) -> Result<Tree> {
 
 /// Rebuilds an ancestral alignment that only contains the nodes of the new (pruned) tree,
 /// keeping the aligned sequences of the remaining nodes. Columns are left untouched.
-fn rebuild_masa<AA: AncestralAlignment>(aligned: &Sequences, new_tree: &Tree) -> Result<AA> {
+fn rebuild_masa<AA: AncestralAlignment>(
+    aligned: &Sequences,
+    new_tree: Tree,
+) -> Result<PhyloInfo<AA>> {
     // We first must get the aligned seqs since just by using the new_tree and the original masa
     // we cannot have access to the mappings as they are indexed through idx of the original tree.
     let records: Vec<Record> = aligned
@@ -433,7 +430,7 @@ fn rebuild_masa<AA: AncestralAlignment>(aligned: &Sequences, new_tree: &Tree) ->
         .cloned()
         .collect();
     let seqs = Sequences::with_alphabet(records, aligned.alphabet())?;
-    validate_ids_with_ancestors(new_tree, &seqs)?;
+    validate_ids_with_ancestors(&new_tree, &seqs)?;
     Ok(AA::from_aligned_with_ancestral_unchecked(seqs, new_tree))
 }
 

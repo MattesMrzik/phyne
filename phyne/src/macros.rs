@@ -796,7 +796,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/rust-phylo/issues. Error: boom"
+        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues. Error: boom"
     )]
     fn bug_macro_formats_message() {
         bug!("custom failure", "boom");
@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/rust-phylo/issues."
+        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues."
     )]
     fn bug_macro_without_error() {
         bug!("custom failure");

@@ -156,6 +156,7 @@ struct BackTrackingResult {
 /// ```rust
 /// # use phyne::Result;
 /// # fn main() -> Result<()> {
+/// use phyne::alignment::AncestralAlignment;
 /// use phyne::phylo_info::PhyloInfoBuilder;
 /// use phyne::random::DefaultGenerator;
 /// use phyne::tkf_model::{EdgeSeqsReestimator, TKF92IndelCostBuilder};

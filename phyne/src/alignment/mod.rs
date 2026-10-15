@@ -136,7 +136,7 @@ pub trait AncestralAlignment: Alignment {
         validate_ids_with_ancestors(&tree, &all_seqs)?;
         all_seqs.remove_gap_cols();
         let ancestral_alignment = Self::from_aligned_with_ancestral_unchecked(all_seqs, tree);
-        let surviving = surviving_columns_mask(&ancestral_alignment);
+        let surviving = surviving_columns_mask(&ancestral_alignment.msa);
         if surviving.is_clear() {
             warn!(
                 "Columns {} go extinct in all leaf sequences. \
@@ -152,7 +152,7 @@ pub trait AncestralAlignment: Alignment {
     ///
     /// Tree is consumed and stored together with the alignment, because the alignment is only
     /// meaningful in the context of the tree that it was built from.
-    fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: &Tree) -> Self;
+    fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: Tree) -> PhyloInfo<Self>;
     /// Removes columns from the alignment where the ancestral character goes extinct, i.e. columns
     /// where all leaf sequences have a gap. Returns a [`FixedBitSet`] mask over the original
     /// alignment columns, where a set bit indicates a column that was kept and an unset bit a column
@@ -165,9 +165,9 @@ pub trait AncestralAlignment: Alignment {
 ///
 /// # Example
 /// ```
-/// use phylo::alignment::{surviving_columns_mask, Alignment, AncestralAlignment, MASA, Sequences};
-/// use phylo::{record, tree};
-/// # use phylo::Result;
+/// use phyne::alignment::{surviving_columns_mask, Alignment, AncestralAlignment, MASA, Sequences};
+/// use phyne::{record, tree};
+/// # use phyne::Result;
 ///
 /// # fn main() -> Result<()> {
 /// let tree = tree!("(((A0:1.0,B1:1.0)I1:1.0,C2:1.0)I2:1.0);");
@@ -178,12 +178,12 @@ pub trait AncestralAlignment: Alignment {
 ///     record!("I1", Some("I1 sequence"), b"A--T"),
 ///     record!("I2", Some("I2 sequence"), b"A--T"),
 /// ])?;
-/// let masa = MASA::from_aligned_with_ancestral(seqs, &tree)?;
+/// let phylo = MASA::from_aligned_with_ancestral(seqs, tree)?;
 ///
 /// // column 0 only has characters in the ancestral sequences and thus goes extinct
 /// // column 1 only has gaps, so gets removed on alignment construction
 /// // columns 1 and 2 survive, so the mask has set bits at indices 1 and 2
-/// assert_eq!(surviving_columns_mask(&masa).ones().collect::<Vec<_>>(), vec![1, 2]);
+/// assert_eq!(surviving_columns_mask(&phylo.msa).ones().collect::<Vec<_>>(), vec![1, 2]);
 /// # Ok(()) }
 /// ```
 pub fn surviving_columns_mask(ancestral_alignment: &impl AncestralAlignment) -> FixedBitSet {
@@ -655,9 +655,9 @@ impl AncestralAlignment for MASA {
     ///
     /// # Example
     /// ```
-    /// use phylo::alignment::{Alignment, AncestralAlignment, MASA, Sequences};
-    /// use phylo::{aligned_seq, record_wo_desc, tree};
-    /// # use phylo::Result;
+    /// use phyne::alignment::{Alignment, AncestralAlignment, MASA, Sequences};
+    /// use phyne::{aligned_seq, record_wo_desc, tree};
+    /// # use phyne::Result;
     ///
     /// # fn main() -> Result<()> {
     /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R:1.0;");
@@ -668,16 +668,16 @@ impl AncestralAlignment for MASA {
     ///     record_wo_desc!("I", b"T-CTAG"),
     ///     record_wo_desc!("R", b"AAATGG"),
     /// ];
-    /// let mut masa = MASA::from_aligned_with_ancestral(Sequences::new(records)?, &tree)?;
+    /// let mut phylo = MASA::from_aligned_with_ancestral(Sequences::new(records)?, tree)?;
     ///
-    /// assert_eq!(masa.len(), 6);
+    /// assert_eq!(phylo.msa.len(), 6);
     ///
     /// // remove the two columns (indices 1 and 4) that go extinct in all leaves
-    /// masa.remove_extinct_columns();
-    /// assert_eq!(masa.len(), 4);
+    /// phylo.msa.remove_extinct_columns();
+    /// assert_eq!(phylo.msa.len(), 4);
     ///
-    /// let seqA = masa.seqs().record_by_id("A").seq();
-    /// let mappingA = masa.leaf_map(&tree.by_id("A").idx);
+    /// let seqA = phylo.msa.seqs().record_by_id("A").seq();
+    /// let mappingA = phylo.msa.leaf_map(&phylo.tree.by_id("A").idx);
     /// assert_eq!(aligned_seq!(mappingA, seqA), b"A-T-");
     /// # Ok(()) }
     /// ```

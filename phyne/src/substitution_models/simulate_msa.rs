@@ -6,18 +6,18 @@
 //!
 //! # Example
 //! ```
-//! use phylo::alignment::{Alignment, AlignmentSimulation, MASA};
-//! use phylo::random::DefaultGenerator;
-//! use phylo::substitution_models::{dna_models::GTR, SubstModel, SubstitutionSimulator};
-//! use phylo::tree;
-//! # use phylo::Result;
+//! use phyne::alignment::{Alignment, AlignmentSimulation, MASA};
+//! use phyne::random::DefaultGenerator;
+//! use phyne::substitution_models::{dna_models::JC69, SubstModel, SubstitutionSimulator};
+//! use phyne::tree;
+//! # use phyne::Result;
 //!
 //! # fn main() -> Result<()> {
 //! let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
 //! let seed = 123;
 //! let alignment_length = 20;
 //! let simulator = SubstitutionSimulator::new(
-//!     SubstModel::<GTR>::new(&[0.25; 4], &[1.0; 6]),
+//!     SubstModel::<JC69>::default(),
 //!     tree,
 //!     alignment_length,
 //! )?;
@@ -73,10 +73,10 @@ impl SubstitutionSimulator {
     ///   [`set_missing_tree_node_ids`](`crate::phylo_info::set_missing_tree_node_ids`)).
     pub fn new<Q: QMatrix>(
         model: SubstModel<Q>,
-        tree: Tree,
+        mut tree: Tree,
         alignment_length: usize,
     ) -> Result<Self> {
-        let tree = set_missing_tree_node_ids(&tree)?;
+        set_missing_tree_node_ids(&mut tree)?;
         let root_dist = unwrap_weighted_index(model.qmatrix.freqs().as_slice());
 
         let mut p_weighted = HashMap::with_capacity(tree.len());
@@ -188,10 +188,7 @@ impl SubstitutionSimulator {
             })
             .collect();
         let seqs = Sequences::new(records).unwrap();
-        PhyloInfo {
-            msa: AA::from_aligned_with_ancestral(seqs, &self.tree).unwrap(),
-            tree: self.tree.clone(),
-        }
+        AA::from_aligned_with_ancestral(seqs, self.tree.clone()).unwrap()
     }
 
     pub(crate) fn simulate_ancestral_alignment_with_length<
@@ -207,16 +204,12 @@ impl SubstitutionSimulator {
             return self.zero_length_phylo_info();
         }
         let seqs = self.simulate_sequences(alignment_length, rng);
-        let msa = AA::from_aligned_with_ancestral(seqs, &self.tree).unwrap_or_else(|e| {
+        AA::from_aligned_with_ancestral(seqs, self.tree.clone()).unwrap_or_else(|e| {
             bug!(
                 "Creating AncestralAlignment from simulated Sequences failed",
                 e
             )
-        });
-        PhyloInfo {
-            msa,
-            tree: self.tree.clone(),
-        }
+        })
     }
 }
 
@@ -242,14 +235,14 @@ mod private_tests {
 
     use crate::alignment::{Alignment, MASA};
     use crate::random::{DefaultGenerator, FakeGenerator, FakeRng};
-    use crate::substitution_models::{dna_models::GTR, SubstModel};
+    use crate::substitution_models::{dna_models::JC69, SubstModel};
     use crate::tree;
 
     use super::*;
 
     #[test]
     fn test_substitution_simulator() {
-        let model = SubstModel::<GTR>::new(&[0.3, 0.2, 0.2, 0.3], &[0.8, 1.2, 0.9, 1.1, 0.7]);
+        let model = SubstModel::<JC69>::default();
         let tree = tree!("((A:2.0,B:1.2)AB:1.3,(C:2.0,D:2.0)CD:2.0)R;");
         let values = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
         let mut rng = RandomGenerator::from_rng(FakeRng::from_f64_values(values));
@@ -271,7 +264,7 @@ mod private_tests {
 
     #[test]
     fn test_substitution_simulator_zero_length() {
-        let model = SubstModel::<GTR>::new(&[0.3, 0.2, 0.2, 0.3], &[0.8, 1.2, 0.9, 1.1, 0.7]);
+        let model = SubstModel::<JC69>::default();
         let tree = tree!("((A:2.0,B:1.2)AB:1.3,(C:2.0,D:2.0)CD:2.0)R;");
         let mut rng = FakeGenerator::default();
 
@@ -315,7 +308,7 @@ mod private_tests {
     #[test]
     fn test_reproducibility() {
         // GTR with same parameters to ensure reproducibility across RNGs
-        let model = SubstModel::<GTR>::new(&[0.3, 0.2, 0.2, 0.3], &[0.8, 1.2, 0.9, 1.1, 0.7]);
+        let model = SubstModel::<JC69>::default();
         let tree = tree!("((A:0.5,B:0.5)AB:0.7,(C:0.6,D:0.6)CD:0.6)R;");
 
         let mut rng1 = DefaultGenerator::new(42);

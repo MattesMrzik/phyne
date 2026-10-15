@@ -15,7 +15,7 @@ use crate::random::FakeGenerator;
 use crate::tkf_model::reestimate::EdgeSeqsReestimator;
 use crate::tree::NodeIdx::{self, Internal, Leaf};
 use crate::tree::Tree;
-use crate::{bail, Result, REPORT_ISSUES_URL, bug};
+use crate::{bail, bug, Result};
 
 lazy_static! {
     pub(super) static ref DUMMY_FREQS: DVector<f64> = DVector::<f64>::zeros(0);
@@ -492,7 +492,7 @@ impl<T: TKFModel, AA: AncestralAlignment> TreeSearchCost for TKFIndelCost<T, AA>
 /// # Arguments
 /// * `x` - must be non-positive (`x <= 0.0`). Usually a ln-probability value.
 pub(crate) fn ln1mexp(x: f64) -> f64 {
-    if !(x <= 0.0) {
+    if x > 0.0 {
         bug!(format!("ln1mexp is only defined for x <= 0 but x is {x}"));
     }
     if x < -std::f64::consts::LN_2 {
