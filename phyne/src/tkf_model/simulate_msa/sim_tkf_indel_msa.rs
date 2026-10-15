@@ -200,7 +200,9 @@ where
             indel_model,
             tree,
             cumulative_logl: RefCell::new(0.0),
-            max_inserted_frag_len: max_insertion_length.unwrap_or(usize::MAX),
+            // If `None`, then there is no limit. Since we cast to `i32` in the sampling functions,
+            // we use `i32::MAX` as the limit.
+            max_inserted_frag_len: max_insertion_length.unwrap_or(i32::MAX as usize),
             root_length: RootLength::Sampled,
         })
     }
@@ -421,12 +423,13 @@ where
         let mu = self.indel_model.mu();
         let beta = ln_beta(lambda, mu, time).exp();
         let mut cumulative_prob = 0.0;
-        for n in 1..self.max_inserted_frag_len + 1 {
-            let homolog_prob = homolog_prob(n, lambda, mu, beta, time);
+        for n in 0..self.max_inserted_frag_len {
+            // n + 1 because we are counting the original link
+            let homolog_prob = homolog_prob(n + 1, lambda, mu, beta, time);
             cumulative_prob += homolog_prob;
             if uniform_sample < cumulative_prob {
                 *self.cumulative_logl.borrow_mut() += homolog_prob.ln();
-                return LinkFate::Homolog(n - 1); // n - 1 because we are not counting the original link
+                return LinkFate::Homolog(n);
             }
         }
         // didn't return in the loop, capping insertion at length max_insertion_length
@@ -476,12 +479,13 @@ where
         let lambda = self.indel_model.lambda();
         let beta = ln_beta(lambda, self.indel_model.mu(), time).exp();
         let mut cumulative_prob = 0.0;
-        for n in 1..self.max_inserted_frag_len {
-            let immortal_prob = immortal_prob(n, lambda, beta);
+        for n in 0..self.max_inserted_frag_len {
+            // n + 1 because we are counting the original immortal link
+            let immortal_prob = immortal_prob(n + 1, lambda, beta);
             cumulative_prob += immortal_prob;
             if uniform_sample < cumulative_prob {
                 *self.cumulative_logl.borrow_mut() += immortal_prob.ln();
-                return n - 1;
+                return n;
             }
         }
         let immortal_prob = 1.0 - cumulative_prob;
