@@ -739,3 +739,31 @@ fn into_alignment_masa_to_msa() {
     assert_eq!(phylo.msa.leaf_map(&b_idx), &align!(b"-CGT"));
     assert_eq!(phylo.msa.leaf_map(&c_idx), &align!(b"A--T"));
 }
+
+#[test]
+fn simulate_alignment_matches_discarded_ancestral_alignment() {
+    let tree = tree!("((A:2.0,B:2.0)I:1.0,C:1.0)R:1.0;");
+    let model = SubstModel::<GTR>::default();
+    let msa_len = 20;
+    let simulator = SubstitutionSimulator::new(model, tree, msa_len).unwrap();
+
+    // the default `simulate_alignment` must equal simulating a MASA and discarding ancestors
+    let seed = 123;
+    let mut rng1 = DefaultGenerator::new(seed);
+    let leaf_only: PhyloInfo<MSA> = simulator.simulate_alignment(&mut rng1);
+
+    let mut rng2 = DefaultGenerator::new(seed);
+    let from_ancestral: PhyloInfo<MSA> = simulator
+        .simulate_ancestral_alignment::<MASA>(&mut rng2)
+        .discard_ancestral_seqs();
+
+    assert_eq!(leaf_only.msa.len(), from_ancestral.msa.len());
+    assert_eq!(leaf_only.msa.seq_count(), from_ancestral.msa.seq_count());
+    for id in ["A", "B", "C"] {
+        assert_eq!(
+            leaf_only.msa.seqs().record_by_id(id).seq(),
+            from_ancestral.msa.seqs().record_by_id(id).seq(),
+            "{id}"
+        );
+    }
+}
