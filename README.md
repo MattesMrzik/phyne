@@ -1,10 +1,10 @@
-# Phylo
+# Phyne
 
-A high-performance Rust library for phylogenetic analysis and multiple sequence alignment under maximum likelihood and parsimony optimality criteria.
+A high-performance Rust crate for indel-aware phylogenetic analysis and multiple sequence alignment under maximum likelihood and parsimony optimality criteria.
 
-<!-- [![Crates.io](https://img.shields.io/crates/v/phylo.svg)](https://crates.io/crates/phylo)
-[![Documentation](https://docs.rs/phylo/badge.svg)](https://docs.rs/phylo) -->
-[![Licence](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/acg-team/rust-phylo#license) [![CI](https://github.com/acg-team/rust-phylo/actions/workflows/test_stable.yml/badge.svg)](https://github.com/acg-team/rust-phylo/actions) [![codecov](https://codecov.io/gh/acg-team/rust-phylo/branch/main/graph/badge.svg)](https://codecov.io/gh/acg-team/rust-phylo)
+<!-- [![Crates.io](https://img.shields.io/crates/v/phyne.svg)](https://crates.io/crates/phyne)
+[![Documentation](https://docs.rs/phyne/badge.svg)](https://docs.rs/phyne) -->
+[![Licence](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/acg-team/phyne#license) [![CI](https://github.com/acg-team/phyne/actions/workflows/test_stable.yml/badge.svg)](https://github.com/acg-team/phyne/actions) [![codecov](https://codecov.io/gh/acg-team/phyne/branch/develop/graph/badge.svg)](https://codecov.io/gh/acg-team/phyne)
 
 [Current Functionality](#current-functionality) • [Getting Started](#getting-started) • [Crate Features](#crate-features) • [Roadmap](#roadmap) • [Contributing](#contributing) • [Related Projects](#related-projects) • [Support](#support) • [Citation](#citation) • [Licence and Attributions](#licence-and-attributions)
 
@@ -21,14 +21,14 @@ A high-performance Rust library for phylogenetic analysis and multiple sequence 
 
 ```toml
 [dependencies]
-phylo = { git = "https://github.com/acg-team/rust-phylo", package = "phylo" }
+phyne = { git = "https://github.com/acg-team/phyne", package = "phyne" }
 ```
 
 Once published on crates.io, you'll be able to use:
 
 ```toml
 [dependencies]
-phylo = "0.1.0"
+phyne = "0.1.0"
 ```
 
 **Minimum Supported Rust Version**: 1.88.0
@@ -37,29 +37,30 @@ MSRV detected using [`cargo-msrv`]( https://github.com/foresterre/cargo-msrv ).
 
 ### Example
 
-<!-- WARNING: If you change the code below, please also update the test "phylo/src/optimisers/topo_optimiser_tests.rs:example_main_from_readme" accordingly!) -->
+<!-- WARNING: If you change the code below, please also update the test "phyne/tests/topology_optimiser.rs:example_main_from_readme" accordingly!) -->
 
 ```rust
-use phylo::likelihood::TreeSearchCost;
-use phylo::optimisers::TopologyOptimiser;
-use phylo::phylo_info::PhyloInfoBuilder;
-use phylo::substitution_models::{K80, SubstModel, SubstitutionCostBuilder};
-use phylo::Result;
+use phyne::likelihood::TreeSearchCost;
+use phyne::optimisers::{SprOptimiser, TopologyOptimiser};
+use phyne::phylo_info::PhyloInfoBuilder;
+use phyne::random::FakeGenerator;
+use phyne::substitution_models::{SubstModel, SubstitutionCostBuilder, K80};
+use phyne::Result;
 
 fn main() -> Result<()> {
     // Note: This example uses test data from the repository
     let info = PhyloInfoBuilder::new("./examples/data/K80.fasta").build()?;
-    let k80 = SubstModel::<K80>::new(&[], &[4.0, 1.0]);
+    let k80 = SubstModel::<K80>::default();
     let c = SubstitutionCostBuilder::new(k80, info).build()?;
     let unopt_cost = c.cost();
-    let rng = FakeGenerator::default();
-    let optimiser = TopologyOptimiser::new(c, SprOptimiser {}, &rng);
+    let mut rng = FakeGenerator::default();
+    let optimiser = TopologyOptimiser::new(c, SprOptimiser {}, &mut rng);
     let result = optimiser.run()?;
     assert_eq!(unopt_cost, result.initial_cost);
     assert!(result.final_cost > result.initial_cost);
     assert!(result.iterations <= 100);
     assert_eq!(result.cost.tree().len(), 9); // The initial tree has 9 nodes, 5 leaves and 4 internal nodes, and so should the resulting tree.
-    Ok(()) 
+    Ok(())
 }
 ```
 
@@ -81,15 +82,15 @@ Enable features in your Cargo.toml:
 
 ```toml
 [dependencies]
-phylo = { git = "https://github.com/acg-team/rust-phylo", package = "phylo", features = ["par-regraft"] }
+phyne = { git = "https://github.com/acg-team/phyne", package = "phyne", features = ["par-regraft"] }
 ```
 
-<!-- 
+<!--
 ## Documentation
-Full documentation is available at docs.rs/phylo.
+Full documentation is available at docs.rs/phyne.
 -->
 
-<!-- 
+<!--
 ## Performance benchmarks
 Will add Luca's benchmarks when possible.
 -->
@@ -104,7 +105,7 @@ This crate is new and in active development at the moment. The basic existing fu
 - Randomised starting trees for tree inference;
 - Generalisation of the tree structure for easier use in other crates.
 
-Other minor features/improvements are documented on the [GitHub issues page]( https://github.com/acg-team/rust-phylo/issues?q=is%3Aissue%20state%3Aopen%20label%3Aenhancement ).
+Other minor features/improvements are documented on the [GitHub issues page]( https://github.com/acg-team/phyne/issues?q=is%3Aissue%20state%3Aopen%20label%3Aenhancement ).
 
 ## Contributing
 
@@ -133,18 +134,18 @@ Please read our [contributor guide]( CONTRIBUTING.md )!
 
 ## Support
 
-For questions, bug reports, or feature requests, please go to [rust-phylo discussion page]( https://github.com/acg-team/rust-phylo/discussions ) and/or open an issue on [GitHub]( https://github.com/acg-team/rust-phylo/issues ).
+For questions, bug reports, or feature requests, please go to the [`phyne` discussion page]( https://github.com/acg-team/phyne/discussions ) and/or open an issue on [GitHub]( https://github.com/acg-team/phyne/issues ).
 
 ## Citation
 
 If you use this library in your research, please consider citing:
 
 ```bibtex
-@software{phylo_rust,
-  title = {Phylo: A Rust library for phylogenetic analysis},
+@software{phyne_rust,
+  title = {This is Phyne: a Rust crate for indel-aware phylogenetics},
   author = {Pečerska, Jūlija and Mrzik, Mattes and Gil, Manuel and Anisimova, Maria},
-  url = {https://github.com/acg-team/rust-phylo},
-  year = {2025}
+  url = {https://github.com/acg-team/phyne},
+  year = {2026}
 }
 ```
 
