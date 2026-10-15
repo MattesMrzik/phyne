@@ -247,6 +247,41 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     /// Removes leaves whose aligned sequence consists only of gaps from both the tree and the
     /// alignment, collapsing single-child nodes that arise.
     ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, AncestralAlignment, MASA, Sequences};
+    /// use phyne::phylo_info::PhyloInfo;
+    /// use phyne::{record_wo_desc, tree};
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("(((A:1.0,B:2.0)I:3.0,C:4.0)R:5.0);");
+    /// let records = vec![
+    ///     record_wo_desc!("A", b"GTGGA---"),
+    ///     record_wo_desc!("B", b"-----NNA"),
+    ///     record_wo_desc!("I", b"T-------"),
+    ///     record_wo_desc!("C", b"--------"),
+    ///     record_wo_desc!("R", b"A-------"),
+    /// ];
+    /// let phylo = MASA::from_aligned_with_ancestral(Sequences::new(records)?, tree)?;
+    ///
+    /// // C consists only of gaps, so it is pruned along with its parent R,
+    /// // and the root collapses to I.
+    /// let phylo = phylo.prune_empty_leaves()?;
+    /// let PhyloInfo { msa, tree } = phylo;
+    ///
+    /// assert_eq!(msa.seq_count(), 2); // A, B
+    /// assert_eq!(msa.ancestral_seqs().len(), 1); // I
+    /// assert_eq!(tree.leaves().len(), 2);
+    /// assert_eq!(tree.node_id(&tree.root), "I");
+    /// assert_eq!(tree.by_id("A").blen, 1.0);
+    /// assert_eq!(tree.by_id("B").blen, 2.0);
+    /// assert_eq!(tree.by_id("I").blen, 8.0); // R's branch (5.0) + C's branch (4.0) transfers to I
+    /// assert!(tree.try_idx("C").is_err());
+    /// assert!(tree.try_idx("R").is_err());
+    /// # Ok(()) }
+    /// ```
+    ///
     /// # Errors
     /// * If pruning would leave fewer than two sequences with characters, which is not a
     ///   meaningful tree.
@@ -265,8 +300,7 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
         }
 
         let aligned = self.aligned_seqs();
-        // TODO: take ownership of the tree and dont pass by ref
-        let pruned_tree = prune_empty_leaves_from_tree(&self.tree, &leaves_to_remove)
+        let pruned_tree = prune_empty_leaves_from_tree(self.tree, &leaves_to_remove)
             .unwrap_or_else(|e| bug!("Pruning empty leaves failed", e));
         let original_len = self.msa.len();
         let phylo: PhyloInfo<AA> = rebuild_masa(&aligned, pruned_tree)
@@ -321,7 +355,7 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
 /// * If any of the given nodes is not a leaf.
 /// * If removing yields a tree with fewer than two leaves.
 /// * Something went wrong while removing a leaf or collapsing the root, which should not happen less there is a bug.
-fn prune_empty_leaves_from_tree(tree: &Tree, leaves_to_remove: &HashSet<NodeIdx>) -> Result<Tree> {
+fn prune_empty_leaves_from_tree(tree: Tree, leaves_to_remove: &HashSet<NodeIdx>) -> Result<Tree> {
     let mut pruned = tree.clone();
     for leaf_idx in leaves_to_remove {
         remove_leaf(&mut pruned, leaf_idx)?;

@@ -3,12 +3,14 @@ use rand::rng;
 use rand::seq::IteratorRandom;
 
 use crate::alignment::{
-    Alignment, AncestralAlignment, InternalAlignments, PairwiseAlignment as PA, SeqMaps, Sequences,
-    MASA, MSA,
+    Alignment, AlignmentSimulation, AncestralAlignment, InternalAlignments,
+    PairwiseAlignment as PA, SeqMaps, Sequences, MASA, MSA,
 };
 use crate::alphabets::{Alphabet, AMINOACIDS, NUCLEOTIDES};
 use crate::io::read_sequences;
 use crate::phylo_info::PhyloInfo;
+use crate::random::DefaultGenerator;
+use crate::substitution_models::{dna_models::GTR, SubstModel, SubstitutionSimulator};
 use crate::tree::{
     NodeIdx::{Internal as I, Leaf as L},
     Tree,
