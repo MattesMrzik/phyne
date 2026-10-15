@@ -78,7 +78,7 @@ pub enum RootLength {
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
 /// let seed = 123;
 /// // The maximum number of inserted links (=fragments) in a single insertion event.
-/// let max_insertion_length = 50;
+/// let max_insertion_length = Some(50);
 /// let simulator = TKFIndelMSASimulator::new(
 ///     TKF92IndelModel::default(),
 ///     tree,
@@ -94,9 +94,8 @@ pub struct TKFIndelMSASimulator<T: TKFModel + FragmentSampler + ExpectedRootLeng
     tree: Tree,
     cumulative_logl: RefCell<f64>,
     // The maximum number of inserted links (=fragments) in a single insertion event.
-    // TODO: rename to max_insertion_frags or similar
-    // but definitely have it as an option
-    max_insertion_length: usize,
+    // If `None`, then there is no limit on the number of inserted links.
+    max_inserted_frag_len: usize,
     root_length: RootLength,
 }
 
@@ -191,13 +190,17 @@ where
     /// # Errors
     /// * If the tree node IDs cannot be completed (see
     ///   [`set_missing_tree_node_ids`](`crate::phylo_info::set_missing_tree_node_ids`)).
-    pub fn new(indel_model: T, mut tree: Tree, max_insertion_length: usize) -> Result<Self> {
+    pub fn new(
+        indel_model: T,
+        mut tree: Tree,
+        max_insertion_length: Option<usize>,
+    ) -> Result<Self> {
         set_missing_tree_node_ids(&mut tree)?;
         Ok(Self {
             indel_model,
             tree,
             cumulative_logl: RefCell::new(0.0),
-            max_insertion_length,
+            max_inserted_frag_len: max_insertion_length.unwrap_or(usize::MAX),
             root_length: RootLength::Sampled,
         })
     }
@@ -418,7 +421,7 @@ where
         let mu = self.indel_model.mu();
         let beta = ln_beta(lambda, mu, time).exp();
         let mut cumulative_prob = 0.0;
-        for n in 1..self.max_insertion_length + 1 {
+        for n in 1..self.max_inserted_frag_len + 1 {
             let homolog_prob = homolog_prob(n, lambda, mu, beta, time);
             cumulative_prob += homolog_prob;
             if uniform_sample < cumulative_prob {
@@ -432,9 +435,9 @@ where
         *self.cumulative_logl.borrow_mut() += homolog_prob.ln();
         debug!(
             "Capping homologous insertion length at {}",
-            self.max_insertion_length
+            self.max_inserted_frag_len
         );
-        LinkFate::Homolog(self.max_insertion_length)
+        LinkFate::Homolog(self.max_inserted_frag_len)
     }
 
     /// Samples the number of non-homologous insertions on a branch, given that the original link is deleted.
@@ -443,7 +446,7 @@ where
         let mu = self.indel_model.mu();
         let beta = ln_beta(lambda, mu, time).exp();
         let mut cumulative_prob = 0.0;
-        for n in 1..self.max_insertion_length {
+        for n in 1..self.max_inserted_frag_len {
             let non_homolog_prob = non_homolog_prob(n, lambda, mu, beta, time);
             cumulative_prob += non_homolog_prob;
             if uniform_sample < cumulative_prob {
@@ -457,9 +460,9 @@ where
         *self.cumulative_logl.borrow_mut() += non_homolog_prob.ln();
         debug!(
             "Capping non-homologous insertion length at {}",
-            self.max_insertion_length
+            self.max_inserted_frag_len
         );
-        LinkFate::NonHomolog(self.max_insertion_length)
+        LinkFate::NonHomolog(self.max_inserted_frag_len)
     }
 
     /// Since immortal links always survive, we only need to sample how many insertions they
@@ -473,7 +476,7 @@ where
         let lambda = self.indel_model.lambda();
         let beta = ln_beta(lambda, self.indel_model.mu(), time).exp();
         let mut cumulative_prob = 0.0;
-        for n in 1..self.max_insertion_length {
+        for n in 1..self.max_inserted_frag_len {
             let immortal_prob = immortal_prob(n, lambda, beta);
             cumulative_prob += immortal_prob;
             if uniform_sample < cumulative_prob {
@@ -483,7 +486,7 @@ where
         }
         let immortal_prob = 1.0 - cumulative_prob;
         *self.cumulative_logl.borrow_mut() += immortal_prob.ln();
-        self.max_insertion_length
+        self.max_inserted_frag_len
     }
 
     /// After [simulation of the links](`Self::build_msa_links`) is complete, this function
@@ -817,7 +820,8 @@ mod private_tests {
             // are summed together for the case of drawing a max_insertion_length.
             let max_insertion_length = 100;
             let simulator =
-                TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_insertion_length).unwrap();
+                TKFIndelMSASimulator::new(tkf_model, tree.clone(), Some(max_insertion_length))
+                    .unwrap();
             let mut rng = DefaultGenerator::new(seed);
             let (result, logl): (TKFSimulationResult<MASA>, f64) =
                 simulator.simulate_with_fragments_and_logl(&mut rng);
@@ -858,7 +862,7 @@ mod private_tests {
             // Should be so large that it doesn't kick in. Because otherwise the
             // accumulated logl would not match the clean cost. Since event probabilities
             // are summed together for the case of drawing a max_insertion_length.
-            let max_insertion_length = 100;
+            let max_insertion_length = Some(100);
             let simulator =
                 TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_insertion_length).unwrap();
             let mut rng = DefaultGenerator::new(seed);
@@ -901,7 +905,7 @@ mod private_tests {
         let r = 0.9;
         let tkf_model = TKF92IndelModel::new(lambda, mu, r);
         let tree = tree!("(A:1.0,B:1.0)R:1.0;");
-        let max_len = 2;
+        let max_len = Some(2);
         let seed = 123;
         let simulator1 =
             TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), max_len).unwrap();
@@ -917,9 +921,10 @@ mod private_tests {
     fn build_root_links_no_zero_length_links() {
         let tkf_model = TKF92IndelModel::new(0.01, 0.0105, 0.7);
         let tree = tree!("(A:1.0,B:1.0)R:1.0;");
+        let max_len = Some(50);
         for seed in 0..1000 {
             let mut simulator =
-                TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), 50).unwrap();
+                TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), max_len).unwrap();
             simulator.root_length(RootLength::Expected);
             let mut rng = DefaultGenerator::new(seed);
             let root_links = simulator.build_root_links(&mut rng);
@@ -940,7 +945,7 @@ mod private_tests {
         let r = 0.5;
         let tkf_model = TKF92IndelModel::new(lambda, mu, r);
         let tree = tree!("(A:1.0,B:1.0)R:1.0;");
-        let max_len = 0; // Cap at 0 insertions on branches
+        let max_len = Some(0); // Cap at 0 insertions on branches
         let simulator = TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_len).unwrap();
         let mut rng = DefaultGenerator::new(123);
         let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);

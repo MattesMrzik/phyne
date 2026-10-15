@@ -2,12 +2,9 @@ use crate::alignment::{surviving_columns_mask, AncestralAlignment};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::simulate_msa::Fragmentation;
 
-/// Result of a TKF simulation (indels only, or indels + substitutions) including
-/// fragmentation and the tree the simulation was performed on.
+/// Result of a TKF simulation (indels only, or indels + substitutions) including fragmentation.
 pub struct TKFSimulationResult<AA: AncestralAlignment> {
-    // TODO: have phylo instead.
-    // TODO: prune_empty_leaves on phylo
-    /// The simulated ancestral alignment.
+    /// The simulated PhyloInfo containing the ancestral alignment and the tree.
     pub phylo: PhyloInfo<AA>,
     /// The fragmentation (right-exclusive boundaries of fragments) in sync with `masa`.
     pub fragmentation: Fragmentation,

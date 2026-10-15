@@ -36,7 +36,7 @@ use crate::{bug, record_wo_desc as record, Result};
 ///
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
 /// let seed = 123;
-/// let max_insertion_length = 50;
+/// let max_insertion_length = Some(50);
 /// let simulator = TKFMSASimulator::new(
 ///     TKF92IndelModel::default(),
 ///     SubstModel::<JC69>::default(),
@@ -72,7 +72,7 @@ where
         indel_model: T,
         subst_model: SubstModel<Q>,
         mut tree: Tree,
-        max_insertion_length: usize,
+        max_insertion_length: Option<usize>,
     ) -> Result<Self> {
         set_missing_tree_node_ids(&mut tree)?;
         let indel_sim = TKFIndelMSASimulator::new(indel_model, tree.clone(), max_insertion_length)?;
@@ -269,10 +269,9 @@ mod private_tests {
         let r = 0.8;
         let tkf_model = TKF92IndelModel::new(lambda, mu, r);
 
-        let max_insertion_length = 50;
+        let max_ins_len = Some(50);
         let simulator =
-            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_insertion_length)
-                .unwrap();
+            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_ins_len).unwrap();
         let mut rng = DefaultGenerator::new(123);
 
         let msa = simulator.simulate_ancestral_alignment::<MASA>(&mut rng).msa;
@@ -299,7 +298,9 @@ mod private_tests {
         let subst_model = SubstModel::<JC69>::default();
         let tkf_model = TKF91IndelModel::new(0.1, 0.2);
 
-        let mut simulator = TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), 50).unwrap();
+        let max_ins_len = Some(50);
+        let mut simulator =
+            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_ins_len).unwrap();
         simulator.root_length(RootLength::Defined(100));
 
         let mut rng = DefaultGenerator::new(123);
@@ -313,8 +314,9 @@ mod private_tests {
         let tree = tree!("(A:1.0,B:1.0)R;");
         let subst_model = SubstModel::<JC69>::default();
         let tkf_model = TKF92IndelModel::new(0.1, 0.2, 0.8);
-
-        let mut simulator = TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), 50).unwrap();
+        let max_ins_len = Some(50);
+        let mut simulator =
+            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_ins_len).unwrap();
         simulator.root_length(RootLength::Defined(100));
 
         let mut rng = DefaultGenerator::new(123);
@@ -333,12 +335,11 @@ mod private_tests {
         );
         let subst_model = SubstModel::<JC69>::default();
         let tkf_model = TKF92IndelModel::new(0.19, 0.2, 0.8);
-        let max_insertion_length = 50;
+        let max_ins_len = Some(50);
         let seed = 123;
 
         let indel_sim =
-            TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), max_insertion_length)
-                .unwrap();
+            TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), max_ins_len).unwrap();
         let mut indel_rng = DefaultGenerator::new(seed);
         let indel_msa = indel_sim
             .simulate_with_fragments::<MASA, _>(&mut indel_rng)
@@ -346,8 +347,7 @@ mod private_tests {
             .msa;
 
         let full_sim =
-            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_insertion_length)
-                .unwrap();
+            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_ins_len).unwrap();
         let mut full_rng = DefaultGenerator::new(seed);
         let full_msa = full_sim
             .simulate_ancestral_alignment::<MASA>(&mut full_rng)

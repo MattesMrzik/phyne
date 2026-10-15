@@ -32,7 +32,7 @@
 //! let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
 //! let seed = 123;
 //! // The maximum number of inserted links (=fragments) in a single insertion event.
-//! let max_insertion_length = 50;
+//! let max_insertion_length = Some(50);
 //! let simulator = TKFMSASimulator::new(
 //!     TKF92IndelModel::default(),
 //!     SubstModel::<JC69>::default(),
