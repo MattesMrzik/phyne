@@ -15,7 +15,7 @@
 //! extinct, i.e., all leaf sequences have a gap in that column, and that leaves whose
 //! aligned sequence consists only of gaps may appear. Use
 //! [`TKFSimulationResult::remove_extinct_columns`] to remove the extinct columns (and keep
-//! the fragmentation in sync) and [`TKFSimulationResult::prune_empty_leaves`] to prune the
+//! the fragmentation in sync) and [`crate::phylo_info::PhyloInfo::prune_empty_leaves`] to prune the
 //! gap-only leaves (and their ancestors) from both the tree and the alignment.
 //!
 //! # Example
