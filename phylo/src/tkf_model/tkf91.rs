@@ -32,8 +32,6 @@ pub struct TKF91IndelModel {
 }
 
 impl TKF91IndelModel {
-    /// Creates a new TKF91 indel model with the given insertion rate `lambda` and deletion rate `mu`.
-    /// Invalid parameters are replaced by their defaults ([`DEFAULT_LAMBDA, DEFAULT_MU`]) with a warning.
     pub fn new(lambda: f64, mu: f64) -> Self {
         let mut params = vec![lambda, mu];
         validate_lambda_mu(&mut params);

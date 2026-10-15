@@ -1,5 +1,5 @@
 use bio::io::fasta::Record;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 
 use crate::alignment::{AlignmentSimulation, AncestralAlignment, Sequences};
 use crate::alphabets::GAP;
@@ -10,7 +10,7 @@ use crate::tkf_model::simulate_msa::sim_tkf_indel_msa::{FragmentSampler, TKFInde
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, RootLength, TKFSimulationResult};
 use crate::tkf_model::TKFModel;
 use crate::tree::{NodeIdx::Internal, NodeIdx::Leaf, Tree};
-use crate::{record_wo_desc as record, Result, REPORT_ISSUES_URL};
+use crate::{bug, record_wo_desc as record, Result};
 
 /// Simulates a full TKF process: first indels then substitutions.
 ///
@@ -47,28 +47,26 @@ use crate::{record_wo_desc as record, Result, REPORT_ISSUES_URL};
 ///     TKF92IndelModel::new(lambda, mu, r),
 ///     subst_model,
 ///     tree,
-///     DefaultGenerator::new(seed),
 ///     max_insertion_length,
 /// )
 /// .unwrap();
-/// let msa: MASA = simulator.simulate_ancestral_alignment();
+/// let mut rng = DefaultGenerator::new(seed);
+/// let msa: MASA = simulator.simulate_ancestral_alignment(&mut rng).msa;
 /// assert_eq!(msa.seq_count(), 3);
 /// ```
-pub struct TKFMSASimulator<T, R>
+pub struct TKFMSASimulator<T>
 where
     T: TKFModel + FragmentSampler + ExpectedRootLength,
-    R: Rng + SeedableRng + RngCore,
 {
-    indel_sim: TKFIndelMSASimulator<T, R>,
-    subst_sim: SubstitutionSimulator<R>,
+    indel_sim: TKFIndelMSASimulator<T>,
+    subst_sim: SubstitutionSimulator,
 }
 
-impl<T, R> TKFMSASimulator<T, R>
+impl<T> TKFMSASimulator<T>
 where
     T: TKFModel + FragmentSampler + ExpectedRootLength,
-    R: Rng + SeedableRng + RngCore + Clone,
 {
-    /// Create a new TKFMSASimulator with the given indel model, substitution model, tree, RNG and
+    /// Create a new TKFMSASimulator with the given indel model, substitution model, tree and
     /// max insertion length (i.e., the max number of inserted links (=fragments) in a single event;
     /// since fragments can consist of multiple characters the number of inserted characters can be
     /// longer than this max length)
@@ -80,21 +78,15 @@ where
         indel_model: T,
         subst_model: SubstModel<Q>,
         tree: Tree,
-        rng: RandomGenerator<R>,
         max_insertion_length: usize,
     ) -> Result<Self> {
         let tree = set_missing_tree_node_ids(&tree)?;
-        let indel_sim = TKFIndelMSASimulator::new(
-            indel_model,
-            tree.clone(),
-            rng.clone(),
-            max_insertion_length,
-        )?;
+        let indel_sim = TKFIndelMSASimulator::new(indel_model, tree.clone(), max_insertion_length)?;
         // This 'alignment_length' is never used as it's always overwritten in the call to
         // 'simulate_with_fragments'. There, we first simulate an indel only alignment. Then we use
         // its length to simulate the substitutions.
         let dummy_len = 0;
-        let subst_sim = SubstitutionSimulator::new(subst_model, tree, rng, dummy_len)?;
+        let subst_sim = SubstitutionSimulator::new(subst_model, tree, dummy_len)?;
         Ok(Self {
             indel_sim,
             subst_sim,
@@ -102,25 +94,27 @@ where
     }
 
     /// Sets the constraint for the [`RootLength`] used for the simulation.
-    pub fn root_length(&mut self, root_length: RootLength) -> &mut Self {
+    pub fn root_length(&mut self, root_length: RootLength) {
         self.indel_sim.root_length(root_length);
-        self
     }
 
     /// Simulates the full TKF process (indels then substitutions) and returns both
     /// the MSA and the fragmentation (right-exclusive boundaries of fragments).
-    pub fn simulate_with_fragments<AA: AncestralAlignment>(&self) -> TKFSimulationResult<AA> {
+    pub fn simulate_with_fragments<AA: AncestralAlignment, R: Rng + SeedableRng>(
+        &self,
+        rng: &mut RandomGenerator<R>,
+    ) -> TKFSimulationResult<AA> {
         // First, indel simulation
         let TKFSimulationResult {
             phylo: indel_phylo,
             fragmentation,
-        } = self.indel_sim.simulate_with_fragments::<AA>();
+        } = self.indel_sim.simulate_with_fragments::<AA, _>(rng);
 
-        // Second, substitution simulation
+        // Second, substitution semulation
         let aln_len = indel_phylo.msa.len();
         let subst_phylo: PhyloInfo<AA> = self
             .subst_sim
-            .simulate_ancestral_alignment_with_length(aln_len);
+            .simulate_ancestral_alignment_with_length(aln_len, rng);
 
         // Third, mask the substitution msa with gaps from the indel msa
         let masa = self.mask_substitution_msa(&indel_phylo.msa, &subst_phylo.msa);
@@ -173,38 +167,35 @@ where
         }
 
         // Construct the final ancestral MSA from the combined records
-        let seqs = Sequences::new(combined_records).unwrap_or_else(|e| {
-            panic!(
-                "Failed to create Sequences from combined records: {e}. Please report this at {REPORT_ISSUES_URL}.",
-            )
-        });
+        let seqs = Sequences::new(combined_records)
+            .unwrap_or_else(|e| bug!("Failed to create Sequences from combined records", e));
         let masa =
             AA::from_aligned_with_ancestral(seqs, self.indel_sim.tree()).unwrap_or_else(|e| {
-                panic!(
-                    "Failed to create ancestral alignment from combined records: {e}. \
-                     Please report this at {REPORT_ISSUES_URL}.",
+                bug!(
+                    "Failed to create ancestral alignment from combined records",
+                    e
                 )
             });
         // calling 'from_aligned_with_ancestral' removes all-gap cols. There should be none,
         // so asserting here that the msa did indeed not shrink.
         let aln_len = indel_msa.len();
-        assert_eq!(
-            masa.len(),
-            aln_len,
-            "Final MSA length should match the indel MSA, but it does not. \
-             Please report this at {REPORT_ISSUES_URL}."
-        );
+        if masa.len() != aln_len {
+            bug!("Final MSA length should match the indel MSA, but it does not")
+        }
         masa
     }
 }
 
-impl<T, R> AlignmentSimulation for TKFMSASimulator<T, R>
+impl<T, R> AlignmentSimulation<R> for TKFMSASimulator<T>
 where
     T: TKFModel + FragmentSampler + ExpectedRootLength,
-    R: Rng + SeedableRng + RngCore + Clone,
+    R: Rng + SeedableRng,
 {
-    fn simulate_ancestral_alignment<AA: AncestralAlignment>(&self) -> PhyloInfo<AA> {
-        self.simulate_with_fragments::<AA>().phylo
+    fn simulate_ancestral_alignment<AA: AncestralAlignment>(
+        &self,
+        rng: &mut RandomGenerator<R>,
+    ) -> PhyloInfo<AA> {
+        self.simulate_with_fragments(rng).phylo
     }
 
     fn tree(&self) -> &Tree {
@@ -287,16 +278,12 @@ mod private_tests {
         let tkf_model = TKF92IndelModel::new(lambda, mu, r);
 
         let max_insertion_length = 50;
-        let simulator = TKFMSASimulator::new(
-            tkf_model,
-            subst_model,
-            tree.clone(),
-            DefaultGenerator::new(123),
-            max_insertion_length,
-        )
-        .unwrap();
+        let simulator =
+            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_insertion_length)
+                .unwrap();
+        let mut rng = DefaultGenerator::new(123);
 
-        let msa = simulator.simulate_ancestral_alignment::<MASA>().msa;
+        let msa = simulator.simulate_ancestral_alignment::<MASA>(&mut rng).msa;
 
         assert_eq!(msa.seq_count() + msa.ancestral_seqs().len(), 13);
         assert_eq!(msa.seq_count(), 7); // A, B, C, D, E, F, G
@@ -320,17 +307,11 @@ mod private_tests {
         let subst_model = SubstModel::<GTR>::new(&[0.25; 4], &[1.0; 6]);
         let tkf_model = TKF91IndelModel::new(0.1, 0.2);
 
-        let mut simulator = TKFMSASimulator::new(
-            tkf_model,
-            subst_model,
-            tree.clone(),
-            DefaultGenerator::new(123),
-            50,
-        )
-        .unwrap();
+        let mut simulator = TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), 50).unwrap();
         simulator.root_length(RootLength::Defined(100));
 
-        let msa = simulator.simulate_ancestral_alignment::<MASA>().msa;
+        let mut rng = DefaultGenerator::new(123);
+        let msa = simulator.simulate_ancestral_alignment::<MASA>(&mut rng).msa;
         let root_map = msa.ancestral_map(&tree.root);
         assert_eq!(root_map.iter().filter(|s| s.is_some()).count(), 100);
     }
@@ -341,17 +322,11 @@ mod private_tests {
         let subst_model = SubstModel::<GTR>::new(&[0.25; 4], &[1.0; 6]);
         let tkf_model = TKF92IndelModel::new(0.1, 0.2, 0.8);
 
-        let mut simulator = TKFMSASimulator::new(
-            tkf_model,
-            subst_model,
-            tree.clone(),
-            DefaultGenerator::new(123),
-            50,
-        )
-        .unwrap();
+        let mut simulator = TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), 50).unwrap();
         simulator.root_length(RootLength::Defined(100));
 
-        let msa = simulator.simulate_ancestral_alignment::<MASA>().msa;
+        let mut rng = DefaultGenerator::new(123);
+        let msa = simulator.simulate_ancestral_alignment::<MASA>(&mut rng).msa;
         let root_map = msa.ancestral_map(&tree.root);
         assert_eq!(root_map.iter().filter(|s| s.is_some()).count(), 100);
     }
@@ -369,24 +344,22 @@ mod private_tests {
         let max_insertion_length = 50;
         let seed = 123;
 
-        let indel_sim = TKFIndelMSASimulator::new(
-            tkf_model.clone(),
-            tree.clone(),
-            DefaultGenerator::new(seed),
-            max_insertion_length,
-        )
-        .unwrap();
-        let indel_msa = indel_sim.simulate_with_fragments::<MASA>().phylo.msa;
+        let indel_sim =
+            TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), max_insertion_length)
+                .unwrap();
+        let mut indel_rng = DefaultGenerator::new(seed);
+        let indel_msa = indel_sim
+            .simulate_with_fragments::<MASA, _>(&mut indel_rng)
+            .phylo
+            .msa;
 
-        let full_sim = TKFMSASimulator::new(
-            tkf_model,
-            subst_model,
-            tree.clone(),
-            DefaultGenerator::new(seed),
-            max_insertion_length,
-        )
-        .unwrap();
-        let full_msa = full_sim.simulate_ancestral_alignment::<MASA>().msa;
+        let full_sim =
+            TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_insertion_length)
+                .unwrap();
+        let mut full_rng = DefaultGenerator::new(seed);
+        let full_msa = full_sim
+            .simulate_ancestral_alignment::<MASA>(&mut full_rng)
+            .msa;
 
         assert_eq!(indel_msa.len(), full_msa.len());
         for node_idx in tree.preorder() {

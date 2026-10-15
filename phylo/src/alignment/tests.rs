@@ -588,6 +588,11 @@ fn remove_extinct_columns_masa() {
     ];
 
     let seqs = Sequences::new(records).unwrap();
+
+    for rec in &seqs.s {
+        assert_eq!(rec.seq().len(), 7, "sequence length mismatch");
+    }
+
     let mut masa = MASA::from_aligned_with_ancestral(seqs, &tree).unwrap();
 
     // sanity checks before removal (the second column is removed when the MASA is created)

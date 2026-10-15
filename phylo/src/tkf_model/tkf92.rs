@@ -43,9 +43,6 @@ impl TKF92IndelModel {
         self.params[usize::from(TKF92Parameters::R)]
     }
 
-    /// Creates a new TKF92 indel model with the given insertion rate `lambda`, deletion rate
-    /// `mu` and fragment length parameter `r`. Invalid parameters are replaced by their defaults
-    /// ([`DEFAULT_LAMBDA`], [`DEFAULT_MU`], [`DEFAULT_R`]) with a warning.
     pub fn new(lambda: f64, mu: f64, r: f64) -> Self {
         let mut params = vec![lambda, mu, r];
         validate_lambda_mu(&mut params);

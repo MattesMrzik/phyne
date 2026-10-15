@@ -4,6 +4,7 @@ use fixedbitset::FixedBitSet;
 use hashbrown::HashMap;
 use itertools::Itertools;
 use log::warn;
+use rand::{Rng, SeedableRng};
 
 use crate::alphabets::{Alphabet, AMB_CHAR};
 use crate::asr::AncestralSequenceReconstruction;
@@ -11,8 +12,9 @@ use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
 use crate::phylo_info::{
     set_missing_tree_node_ids, validate_ids_with_ancestors, validate_taxa_ids, PhyloInfo,
 };
+use crate::random::RandomGenerator;
 use crate::tree::{NodeIdx, NodeIdx::Internal, NodeIdx::Leaf, Tree};
-use crate::{align, aligned_seq, bail, record, Result, REPORT_ISSUES_URL};
+use crate::{align, aligned_seq, bail, bug, record, Result};
 
 pub mod sequences;
 pub use sequences::*;
@@ -104,8 +106,6 @@ pub trait Alignment: Display + Clone + Debug {
 /// prerequisites to build an alignment, not an ancestral alignment. Please overwrite this default
 /// implementation and make sure to call [`Tree::node_ids_are_unique`] in addition to checks
 /// your implementation requires.
-// TODO: instead of having this tip here, we could change the default implementation of
-// Alignment::from_aligned to ensure prerequisites for alignment as well as ancestral alignment.
 pub trait AncestralAlignment: Alignment {
     fn ancestral_seqs(&self) -> &Sequences;
     fn ancestral_map(&self, node_idx: &NodeIdx) -> &Mapping;
@@ -128,14 +128,11 @@ pub trait AncestralAlignment: Alignment {
         all_seqs.remove_gap_cols();
         let ancestral_alignment = Self::from_aligned_with_ancestral_unchecked(all_seqs, tree);
         let surviving = surviving_columns_mask(&ancestral_alignment);
-        let extinct_cols: Vec<usize> = (0..ancestral_alignment.len())
-            .filter(|&col_idx| !surviving.contains(col_idx))
-            .collect();
-        if !extinct_cols.is_empty() {
+        if surviving.is_clear() {
             warn!(
                 "Columns {} go extinct in all leaf sequences. \
                 Consider calling `remove_extinct_columns` on the alignment.",
-                extinct_cols.iter().format(", ")
+                surviving.ones().format(", ")
             );
         }
         Ok(ancestral_alignment)
@@ -147,9 +144,6 @@ pub trait AncestralAlignment: Alignment {
     /// where all leaf sequences have a gap. Returns a [`FixedBitSet`] mask over the original
     /// alignment columns, where a set bit indicates a column that was kept and an unset bit a column
     /// that was removed.
-    //
-    //TODO: perhaps split thin into a method that determines the mask, and another that (internally
-    //calls the first) and removes the columns
     fn remove_extinct_columns(&mut self);
 }
 
@@ -639,9 +633,37 @@ impl AncestralAlignment for MASA {
         }
     }
 
-    /// TODO: add a doc string with Example
-    /// remove the return type
-    /// and just call the surviving_columns_mask  in the update fragmentation
+    /// Removes alignment columns where the ancestral character has gone extinct, i.e. columns
+    /// where every leaf sequence has a gap.
+    ///
+    /// # Example
+    /// ```
+    /// use phylo::alignment::{Alignment, AncestralAlignment, MASA, Sequences};
+    /// use phylo::{aligned_seq, record_wo_desc, tree};
+    /// # use phylo::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R:1.0;");
+    /// let records = vec![
+    ///     record_wo_desc!("A", b"A--T--"),
+    ///     record_wo_desc!("B", b"C-CT--"),
+    ///     record_wo_desc!("C", b"G-CT-G"),
+    ///     record_wo_desc!("I", b"T-CTAG"),
+    ///     record_wo_desc!("R", b"AAATGG"),
+    /// ];
+    /// let mut masa = MASA::from_aligned_with_ancestral(Sequences::new(records)?, &tree)?;
+    ///
+    /// assert_eq!(masa.len(), 6);
+    ///
+    /// // remove the two columns (indices 1 and 4) that go extinct in all leaves
+    /// masa.remove_extinct_columns();
+    /// assert_eq!(masa.len(), 4);
+    ///
+    /// let seqA = masa.seqs().record_by_id("A").seq();
+    /// let mappingA = masa.leaf_map(&tree.by_id("A").idx);
+    /// assert_eq!(aligned_seq!(mappingA, seqA), b"A-T-");
+    /// # Ok(()) }
+    /// ```
     fn remove_extinct_columns(&mut self) {
         // Determine columns where the ancestral character did not go extinct
         let keep_cols = surviving_columns_mask(self);
@@ -687,13 +709,7 @@ impl AncestralAlignment for MASA {
                 Internal(_) => self.ancestral_seqs.update_record(node_id, new_record),
                 Leaf(_) => self.leaf_seqs.update_record(node_id, new_record),
             }
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Updating record failed. \
-                    Please report this at {REPORT_ISSUES_URL}. \
-                    Error: {e}"
-                )
-            });
+            .unwrap_or_else(|e| bug!("Updating record failed", e));
         }
     }
 }
@@ -732,13 +748,7 @@ impl MASA {
         // record exists in the ancestral_seqs, unless we have a bug in our code
         self.ancestral_seqs
             .update_record(id, new_record)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Updating ancestral record failed. \
-                    Please report this at {REPORT_ISSUES_URL}. \
-                    Error: {e}"
-                )
-            });
+            .unwrap_or_else(|e| bug!("Updating ancestral record failed", e));
     }
 }
 
@@ -747,20 +757,23 @@ impl MASA {
 /// Implementors simulate sequences down a [`Tree`] according to some evolutionary model
 /// (e.g. substitutions only, or a full TKF indel + substitution process) and can produce
 /// either an ancestral alignment or an alignment of only the leaf sequences.
-pub trait AlignmentSimulation {
+pub trait AlignmentSimulation<R: Rng + SeedableRng> {
     /// Simulates an ancestral alignment, i.e. an alignment that also contains sequences for
     /// the ancestral nodes of the tree. By pure chance, some columns may go extinct, i.e.,
     /// the homology path in that column reaches no leaf, consider calling
     /// [`AncestralAlignment::remove_extinct_columns`] on the resulting alignment.
-    // TODO: inject a random number generator into the simulation, so that the user can control the
-    // seed and get reproducible results. then we dont need a refcell
-    fn simulate_ancestral_alignment<AA: AncestralAlignment>(&self) -> PhyloInfo<AA>;
+    fn simulate_ancestral_alignment<AA: AncestralAlignment>(
+        &self,
+        rng: &mut RandomGenerator<R>,
+    ) -> PhyloInfo<AA>;
     /// Simulates an alignment, i.e., returns only the leaf sequences (without ancestral sequences).
-    /// It default implementation calls [`Self::simulate_ancestral_alignment`] and then transforms
-    /// the resulting ancestral alignment into a regular alignment using
-    /// [`AncestralAlignment::into_alignment`].
-    fn simulate_alignment<A: Alignment>(&self) -> PhyloInfo<A> {
-        self.simulate_ancestral_alignment::<MASA>()
+    /// It default implementation calls [`Self::simulate_ancestral_alignment`] and discards the
+    /// ancestral sequences.
+    fn simulate_alignment<A: Alignment>(&self, rng: &mut RandomGenerator<R>) -> PhyloInfo<A> {
+        // Since we are calling A::from_aligned_unchecked in discard_ancestral_seqs on the sequences
+        // that are simulated we return type A. It does not really matter which AA type was simulated first
+        // and then transformed to A, since the user never sees the MASA/AA.
+        self.simulate_ancestral_alignment::<MASA>(rng)
             .discard_ancestral_seqs()
     }
     /// Returns the tree the simulation is performed on.

@@ -10,7 +10,7 @@ use crate::tree::{
     NodeIdx::{self, Internal, Leaf},
     Tree,
 };
-use crate::{aligned_seq, bail, record, Result, REPORT_ISSUES_URL};
+use crate::{aligned_seq, bail, bug, record, Result};
 
 mod phyloinfo_builder;
 pub use phyloinfo_builder::*;
@@ -196,6 +196,40 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
         Ok(())
     }
 
+    /// Converts an ancestral alignment (with sequences for all tree nodes) into an alignment
+    /// that contains only the leaf sequences, discarding the ancestral sequences. Columns that
+    /// become all-gap in the leaf sequences are removed.
+    ///
+    /// # Example
+    /// ```
+    /// use phylo::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
+    /// use phylo::phylo_info::PhyloInfo;
+    /// use phylo::{record_wo_desc, tree};
+    /// # use phylo::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R:1.0;");
+    /// let records = vec![
+    ///     record_wo_desc!("A", b"A---C-T"),
+    ///     record_wo_desc!("B", b"---CG-T"),
+    ///     record_wo_desc!("C", b"A-----T"),
+    ///     record_wo_desc!("I", b"A-ACG-T"),
+    ///     record_wo_desc!("R", b"A-ACG-T"),
+    /// ];
+    /// let masa = MASA::from_aligned_with_ancestral(Sequences::new(records)?, &tree)?;
+    ///
+    /// // columns 2 and 5 are only gaps, so they are removed during the creation
+    /// assert_eq!(masa.len(), 5);
+    ///
+    /// let phylo = PhyloInfo { msa: masa, tree };
+    /// let phylo: PhyloInfo<MSA> = phylo.discard_ancestral_seqs();
+    ///
+    /// assert_eq!(phylo.msa.seq_count(), 3);
+    /// // column 3 is only gaps in the leaf sequences, so it is removed during the transformation
+    /// assert_eq!(phylo.msa.len(), 4);
+    /// assert_eq!(phylo.msa.seqs().record_by_id("A").seq(), b"ACT");
+    /// # Ok(()) }
+    /// ```
     pub fn discard_ancestral_seqs<A: Alignment>(self) -> PhyloInfo<A> {
         let mut leaf_records = Vec::with_capacity(self.msa.leaf_maps().len());
         for (node_idx, map) in self.msa.leaf_maps() {
@@ -237,18 +271,10 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
         let aligned = self.aligned_seqs();
         // TODO: take ownership of the tree and dont pass by ref
         let pruned_tree = prune_empty_leaves_from_tree(&self.tree, &leaves_to_remove)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Pruning empty leaves failed: {e}. This is a bug, please report it at {REPORT_ISSUES_URL}",
-                )
-            });
+            .unwrap_or_else(|e| bug!("Pruning empty leaves failed", e));
         let original_len = self.msa.len();
-        let masa: AA = rebuild_masa(&aligned, &pruned_tree).unwrap_or_else(|e| {
-            panic!(
-                "Rebuilding MASA after pruning empty leaves failed: {e}. \
-                 This is a bug, please report it at {REPORT_ISSUES_URL}",
-            )
-        });
+        let masa: AA = rebuild_masa(&aligned, &pruned_tree)
+            .unwrap_or_else(|e| bug!("Rebuilding MASA after pruning empty leaves failed", e));
         debug_assert_eq!(masa.len(), original_len);
         self.tree = pruned_tree;
         self.msa = masa;
@@ -258,21 +284,11 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
 
     /// Returns the leaves whose aligned sequence consists only of gaps.
     fn all_gap_leaves(&self) -> HashSet<NodeIdx> {
-        self.tree
-            .preorder()
+        self.msa
+            .leaf_maps()
             .iter()
-            .filter_map(|node_idx| match node_idx {
-                Leaf(_)
-                    if self
-                        .msa
-                        .leaf_map(node_idx)
-                        .iter()
-                        .all(|site| site.is_none()) =>
-                {
-                    Some(*node_idx)
-                }
-                _ => None,
-            })
+            .filter(|(_, leaf_map)| leaf_map.iter().all(Option::is_none))
+            .map(|(leaf_idx, _)| *leaf_idx)
             .collect()
     }
 
