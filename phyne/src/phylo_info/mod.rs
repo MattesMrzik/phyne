@@ -198,7 +198,7 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
 
     /// Converts an ancestral alignment (with sequences for all tree nodes) into an alignment
     /// that contains only the leaf sequences, discarding the ancestral sequences. Columns that
-    /// become all-gap in the leaf sequences are removed.
+    /// become all-gap are removed.
     ///
     /// # Example
     /// ```
@@ -321,8 +321,8 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     }
 
     /// Returns all sequences (leaf and ancestral) in aligned form, mirroring
-    /// [`Display`](`std::fmt::Display`) for MASA. Node ids are resolved through the tree,
-    /// since `idx_to_id` is private to the alignment module.
+    /// [`Display`](`std::fmt::Display`) for [`crate::alignment::MASA`].
+    /// Node ids are resolved through the tree, since `idx_to_id` is private to the alignment module.
     fn aligned_seqs(&self) -> Sequences {
         let both_maps = self
             .msa

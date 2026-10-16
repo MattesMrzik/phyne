@@ -159,8 +159,9 @@ pub trait AncestralAlignment: Alignment {
     fn remove_extinct_columns(&mut self);
 }
 
-/// Returns a [`FixedBitSet`] mask over alignment columns indicating which do not go extinct,
-/// i.e. have at least one non-`None` site across all leaf sequences.
+/// Returns a [`FixedBitSet`] mask over alignment columns indicating which do not go extinct.
+///
+/// See also [`AncestralAlignment::remove_extinct_columns`].
 ///
 /// # Example
 /// ```
@@ -171,16 +172,15 @@ pub trait AncestralAlignment: Alignment {
 /// # fn main() -> Result<()> {
 /// let tree = tree!("(((A0:1.0,B1:1.0)I1:1.0,C2:1.0)I2:1.0);");
 /// let seqs = Sequences::new(vec![
-///     record!("A0", Some("A0 sequence"), b"---T"),
-///     record!("B1", Some("B1 sequence"), b"---T"),
-///     record!("C2", Some("C2 sequence"), b"--C-"),
-///     record!("I1", Some("I1 sequence"), b"A--T"),
-///     record!("I2", Some("I2 sequence"), b"A--T"),
+///     record!("A0", Some("A0 sequence"), b"--T"),
+///     record!("B1", Some("B1 sequence"), b"--T"),
+///     record!("C2", Some("C2 sequence"), b"-C-"),
+///     record!("I1", Some("I1 sequence"), b"A-T"),
+///     record!("I2", Some("I2 sequence"), b"A-T"),
 /// ])?;
 /// let phylo = MASA::from_aligned_with_ancestral(seqs, tree)?;
 ///
 /// // column 0 only has characters in the ancestral sequences and thus goes extinct
-/// // column 1 only has gaps, so gets removed on alignment construction
 /// // columns 1 and 2 survive, so the mask has set bits at indices 1 and 2
 /// assert_eq!(surviving_columns_mask(&phylo.msa).ones().collect::<Vec<_>>(), vec![1, 2]);
 /// # Ok(()) }
@@ -768,10 +768,10 @@ impl MASA {
     }
 }
 
-/// Simulates MSAs along a tree.
+/// Simulates sequences along a tree producing an alignment.
 ///
 /// Implementors simulate sequences down a [`Tree`] according to some evolutionary model
-/// (e.g. substitutions only, or a full TKF indel + substitution process) and can produce
+/// (e.g. substitutions only, or a TKF indel + substitution process) and can produce
 /// either an ancestral alignment or an alignment of only the leaf sequences.
 pub trait AlignmentSimulation<R: Rng + SeedableRng> {
     /// Simulates an ancestral alignment, i.e. an alignment that also contains sequences for
