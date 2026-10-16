@@ -56,11 +56,11 @@ pub enum RootLength {
     Expected,
 }
 
-/// Simulates the indel process under a [TKFModel](crate::tkf_model::TKFModel) to produce an MASA
-/// (= multiple ancestral sequence alignment) containing only [`GAP`]s and [`AMB_CHAR`]s, representing the indel history.
+/// Simulates the indel process under a [TKFModel](crate::tkf_model::TKFModel) to produce an [`AncestralAlignment`]
+/// containing only [`GAP`]s and [`AMB_CHAR`]s, representing the indel history.
 /// The `max_insertion_length` parameter controls the maximum number of inserted links (=fragments)
 /// that can be produced in a single insertion event.
-/// Note that, the MASA might contain columns where the character goes extinct, i.e., all leaf
+/// Note that, the alignment might contain columns where the character goes extinct, i.e., all leaf
 /// sequences have a gap in that column. You may want to call
 /// [`TKFSimulationResult::remove_extinct_columns`](`TKFSimulationResult::remove_extinct_columns`).
 ///

@@ -163,7 +163,7 @@ impl TKFIndelModelInfo {
     }
 }
 
-/// Computes the log likelihood of an [ancestral alignment](`AncestralAlignment`)
+/// Computes the ln likelihood of an [ancestral alignment](`AncestralAlignment`)
 /// given a tree under a [TKF](`TKFModel`) indel model, i.e., without substitutions.
 #[derive(Debug)]
 pub struct TKFIndelCost<T: TKFModel, AA: AncestralAlignment> {

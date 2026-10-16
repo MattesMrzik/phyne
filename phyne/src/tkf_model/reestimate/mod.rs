@@ -241,7 +241,7 @@ where
     /// Accordingly, this method will return an error if this is not the case.
     ///
     /// # Returns
-    /// On success, returns the resulting ln likelihood of the MASA given the tree after reestimation.
+    /// On success, returns the resulting ln likelihood of the [`AncestralAlignment`] given the tree after reestimation.
     pub fn reestimate(&mut self, v2_idx: &NodeIdx) -> Result<f64> {
         let v2_id = self.cost.phylo.tree.node(v2_idx).id.clone();
         if v2_idx == &self.cost.phylo.tree.root {
@@ -272,7 +272,7 @@ where
     /// a sibling. If this condition is violated, this method panics.
     ///
     /// # Returns
-    /// Returns the resulting ln likelihood of the MASA given the tree after reestimation.
+    /// Returns the resulting ln likelihood of the [`AncestralAlignment`] given the tree after reestimation.
     pub fn reestimate_unchecked(&mut self, v2_idx: &NodeIdx) -> f64 {
         if !self
             .cost
@@ -637,7 +637,7 @@ where
         (max, max_index)
     }
 
-    /// Computes the constant part of the log likelihood that is independent of the alignment and
+    /// Computes the constant part of the ln likelihood that is independent of the alignment and
     /// only depends on the tree and model parameters.
     fn const_per_alignment(&self) -> f64 {
         let l = self.cost.model.lambda();
