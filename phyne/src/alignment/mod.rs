@@ -154,9 +154,8 @@ pub trait AncestralAlignment: Alignment {
     /// meaningful in the context of the tree that it was built from.
     fn from_aligned_with_ancestral_unchecked(all_seqs: Sequences, tree: Tree) -> PhyloInfo<Self>;
     /// Removes columns from the alignment where the ancestral character goes extinct, i.e. columns
-    /// where all leaf sequences have a gap. Returns a [`FixedBitSet`] mask over the original
-    /// alignment columns, where a set bit indicates a column that was kept and an unset bit a column
-    /// that was removed.
+    /// where all leaf sequences have a gap, updating all sequence mappings accordingly.
+    /// Use [`surviving_columns_mask`] to inspect which columns survive before removal.
     fn remove_extinct_columns(&mut self);
 }
 
@@ -784,7 +783,7 @@ pub trait AlignmentSimulation<R: Rng + SeedableRng> {
         rng: &mut RandomGenerator<R>,
     ) -> PhyloInfo<AA>;
     /// Simulates an alignment, i.e., returns only the leaf sequences (without ancestral sequences).
-    /// It default implementation calls [`Self::simulate_ancestral_alignment`] and discards the
+    /// Its default implementation calls [`Self::simulate_ancestral_alignment`] and discards the
     /// ancestral sequences.
     fn simulate_alignment<A: Alignment>(&self, rng: &mut RandomGenerator<R>) -> PhyloInfo<A> {
         // Since we are calling A::from_aligned_unchecked in discard_ancestral_seqs on the sequences

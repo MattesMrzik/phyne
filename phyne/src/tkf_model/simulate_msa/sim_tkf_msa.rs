@@ -14,39 +14,41 @@ use crate::{bug, record_wo_desc as record, Result};
 
 /// Simulates a full TKF process: first indels then substitutions.
 ///
-/// The simulator runs the [indel simulator](TKFIndelMSASimulator) to obtain an ancestral alignment
-/// that represents homology paths of character presence, then simulates substitutions along the same
-/// tree for the number of columns produced by the indel simulation and finally uses the indel MSA
-/// as a mask to place gaps.
-/// Note, that the MASA might contain columns where the character goes extinct, i.e., all leaf
+/// First [indel events](TKFIndelMSASimulator) are simulated to obtain an ancestral alignment
+/// that represents homology paths, then simulates [substitutions](`SubstitutionSimulator`) on them.
+/// Note, that the alignment might contain columns where the character goes extinct, i.e., all leaf
 /// sequences have a gap in that column. You may want to call
-/// [`AncestralAlignment::remove_extinct_columns`](`crate::alignment::AncestralAlignment::remove_extinct_columns`) on the
-/// resulting alignment or
-/// [`TKFSimulationResult::remove_extinct_columns`](`TKFSimulationResult::remove_extinct_columns`) on the
-/// simulation result if you also care about the fragmentation and want to remove those.
+/// [`TKFSimulationResult::remove_extinct_columns`](`TKFSimulationResult::remove_extinct_columns`).
 ///
 /// # Example
 /// ```
-/// use phyne::alignment::{Alignment, AlignmentSimulation, MASA};
+/// use phyne::alignment::{Alignment, AlignmentSimulation, AncestralAlignment, MASA};
 /// use phyne::random::DefaultGenerator;
 /// use phyne::substitution_models::{dna_models::JC69, SubstModel};
-/// use phyne::tkf_model::simulate_msa::TKFMSASimulator;
+/// use phyne::tkf_model::simulate_msa::{RootLength, TKFMSASimulator};
 /// use phyne::tkf_model::TKF92IndelModel;
 /// use phyne::tree;
+/// # use phyne::Result;
 ///
+/// # fn main() -> Result<()> {
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
-/// let seed = 123;
-/// let max_insertion_length = Some(50);
-/// let simulator = TKFMSASimulator::new(
+/// // The maximum number of inserted links (=fragments) in a single insertion event.
+/// let max_ins_len = Some(50);
+/// let mut simulator = TKFMSASimulator::new(
 ///     TKF92IndelModel::default(),
 ///     SubstModel::<JC69>::default(),
 ///     tree,
-///     max_insertion_length,
-/// )
-/// .unwrap();
-/// let mut rng = DefaultGenerator::new(seed);
-/// let msa: MASA = simulator.simulate_ancestral_alignment(&mut rng).msa;
-/// assert_eq!(msa.seq_count(), 3);
+///     max_ins_len
+/// )?;
+/// // Fix the root sequence to exactly 100 characters.
+/// let root_len = 100;
+/// simulator.root_length(RootLength::Defined(root_len));
+/// let mut rng = DefaultGenerator::new(123);
+/// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);
+/// assert_eq!(phylo.msa.seq_count(), 3);
+/// let root_map = phylo.msa.ancestral_map(&phylo.tree.root);
+/// assert_eq!(root_map.iter().filter(|site| site.is_some()).count(), root_len);
+/// # Ok(()) }
 /// ```
 pub struct TKFMSASimulator<T>
 where
@@ -60,14 +62,14 @@ impl<T> TKFMSASimulator<T>
 where
     T: TKFModel + FragmentSampler + ExpectedRootLength,
 {
-    /// Create a new TKFMSASimulator with the given indel model, substitution model, tree and
+    /// Create a new [`TKFMSASimulator`] with the given indel model, substitution model, tree and
     /// max insertion length (i.e., the max number of inserted links (=fragments) in a single event;
     /// since fragments can consist of multiple characters the number of inserted characters can be
-    /// longer than this max length)
+    /// longer than this max length).
     ///
     /// # Errors
     /// * If the tree node IDs cannot be completed (see
-    ///   [`set_missing_tree_node_ids`](`crate::phylo_info::set_missing_tree_node_ids`))..
+    ///   [`set_missing_tree_node_ids`](`crate::phylo_info::set_missing_tree_node_ids`)).
     pub fn new<Q: QMatrix>(
         indel_model: T,
         subst_model: SubstModel<Q>,
@@ -88,12 +90,70 @@ where
     }
 
     /// Sets the constraint for the [`RootLength`] used for the simulation.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{AlignmentSimulation, AncestralAlignment, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::substitution_models::{dna_models::JC69, SubstModel};
+    /// use phyne::tkf_model::simulate_msa::{RootLength, TKFMSASimulator};
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let mut simulator = TKFMSASimulator::new(
+    ///     TKF92IndelModel::default(),
+    ///     SubstModel::<JC69>::default(),
+    ///     tree,
+    ///     max_ins_len,
+    /// )?;
+    /// let root_len = 100;
+    /// simulator.root_length(RootLength::Defined(root_len));
+    ///
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);
+    /// let root_map = phylo.msa.ancestral_map(&phylo.tree.root);
+    /// assert_eq!(root_map.iter().filter(|site| site.is_some()).count(), root_len);
+    /// # Ok(()) }
+    /// ```
     pub fn root_length(&mut self, root_length: RootLength) {
         self.indel_sim.root_length(root_length);
     }
 
-    /// Simulates the full TKF process (indels then substitutions) and returns both
-    /// the MSA and the fragmentation (right-exclusive boundaries of fragments).
+    /// Simulates the full TKF process (indels and substitutions) and returns
+    /// the [fragmentation](`crate::tkf_model::Fragmentation`).
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::substitution_models::{dna_models::JC69, SubstModel};
+    /// use phyne::tkf_model::simulate_msa::TKFMSASimulator;
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let simulator = TKFMSASimulator::new(
+    ///     TKF92IndelModel::default(),
+    ///     SubstModel::<JC69>::default(),
+    ///     tree,
+    ///     max_ins_len,
+    /// )?;
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+    ///
+    /// assert_eq!(result.phylo.msa.seq_count(), 3);
+    /// assert!(!result.fragmentation.is_empty());
+    /// # Ok(()) }
+    /// ```
     pub fn simulate_with_fragments<AA: AncestralAlignment, R: Rng + SeedableRng>(
         &self,
         rng: &mut RandomGenerator<R>,

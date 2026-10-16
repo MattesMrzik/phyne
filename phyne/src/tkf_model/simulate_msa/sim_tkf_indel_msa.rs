@@ -62,32 +62,35 @@ pub enum RootLength {
 /// that can be produced in a single insertion event.
 /// Note that, the MASA might contain columns where the character goes extinct, i.e., all leaf
 /// sequences have a gap in that column. You may want to call
-/// [`AncestralAlignment::remove_extinct_columns`](`crate::alignment::AncestralAlignment::remove_extinct_columns`) on the
-/// resulting alignment or
-/// [`TKFSimulationResult::remove_extinct_columns`](`TKFSimulationResult::remove_extinct_columns`) on the
-/// simulation result if you also care about the fragmentation and want to remove those.
+/// [`TKFSimulationResult::remove_extinct_columns`](`TKFSimulationResult::remove_extinct_columns`).
 ///
 /// # Example
 /// ```
-/// use phyne::alignment::{Alignment, MASA};
+/// use phyne::alignment::{Alignment, AncestralAlignment, MASA};
 /// use phyne::random::DefaultGenerator;
-/// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+/// use phyne::tkf_model::simulate_msa::{RootLength, TKFIndelMSASimulator};
 /// use phyne::tkf_model::TKF92IndelModel;
 /// use phyne::tree;
+/// # use phyne::Result;
 ///
+/// # fn main() -> Result<()> {
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
-/// let seed = 123;
 /// // The maximum number of inserted links (=fragments) in a single insertion event.
-/// let max_insertion_length = Some(50);
-/// let simulator = TKFIndelMSASimulator::new(
+/// let max_ins_len = Some(50);
+/// let mut simulator = TKFIndelMSASimulator::new(
 ///     TKF92IndelModel::default(),
 ///     tree,
-///     max_insertion_length,
-/// )
-/// .unwrap();
+///     max_ins_len,
+/// )?;
+/// // Fix the root sequence to exactly 100 characters.
+/// simulator.root_length(RootLength::Defined(100));
+/// let seed = 123;
 /// let mut rng = DefaultGenerator::new(seed);
 /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
 /// assert_eq!(result.phylo.msa.seq_count(), 3);
+/// let root_map = result.phylo.msa.ancestral_map(&result.phylo.tree.root);
+/// assert_eq!(root_map.iter().filter(|site| site.is_some()).count(), 100);
+/// # Ok(()) }
 /// ```
 pub struct TKFIndelMSASimulator<T: TKFModel + FragmentSampler + ExpectedRootLength> {
     indel_model: T,
@@ -187,6 +190,22 @@ where
     /// Creates a new [`TKFIndelMSASimulator`] with the given indel model, tree and the
     /// maximum number of inserted links (=fragments) in a single insertion event.
     ///
+    /// # Example
+    /// ```
+    /// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let simulator = TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+    /// assert_eq!(simulator.tree().len(), 5);
+    /// # Ok(()) }
+    /// ```
+    ///
     /// # Errors
     /// * If the tree node IDs cannot be completed (see
     ///   [`set_missing_tree_node_ids`](`crate::phylo_info::set_missing_tree_node_ids`)).
@@ -208,11 +227,53 @@ where
     }
 
     /// Sets the constraint for the [`RootLength`] used for the simulation.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{AncestralAlignment, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::tkf_model::simulate_msa::{RootLength, TKFIndelMSASimulator};
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let mut simulator =
+    ///     TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+    /// let root_len = 100;
+    /// simulator.root_length(RootLength::Defined(root_len));
+    ///
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+    /// let root_map = result.phylo.msa.ancestral_map(&result.phylo.tree.root);
+    /// assert_eq!(root_map.iter().filter(|site| site.is_some()).count(), root_len);
+    /// # Ok(()) }
+    /// ```
     pub fn root_length(&mut self, root_length: RootLength) {
         self.root_length = root_length;
     }
 
     /// Returns the tree the simulation is performed on.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let simulator =
+    ///     TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+    /// assert_eq!(simulator.tree().node_id(&simulator.tree().root), "R");
+    /// # Ok(()) }
+    /// ```
     pub fn tree(&self) -> &Tree {
         &self.tree
     }
@@ -235,6 +296,29 @@ where
     }
 
     /// Simulates the indel process and produces the corresponding ancestral alignment and fragmentation.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let simulator =
+    ///     TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+    ///
+    /// assert_eq!(result.phylo.msa.seq_count(), 3);
+    /// assert!(!result.fragmentation.is_empty());
+    /// # Ok(()) }
+    /// ```
     pub fn simulate_with_fragments<AA: AncestralAlignment, R: Rng + SeedableRng>(
         &self,
         rng: &mut RandomGenerator<R>,

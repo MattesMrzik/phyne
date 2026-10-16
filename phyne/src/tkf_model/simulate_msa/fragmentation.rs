@@ -11,6 +11,29 @@ use crate::tkf_model::blocks_of_alignment;
 /// There is no public constructor: a `Fragmentation` is obtained from a
 /// simulation result (see [`TKFSimulationResult`](`crate::tkf_model::simulate_msa::TKFSimulationResult`))
 /// and is always kept in sync with the alignment.
+///
+/// # Example
+/// ```
+/// use phyne::alignment::{Alignment, MASA};
+/// use phyne::random::DefaultGenerator;
+/// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+/// use phyne::tkf_model::TKF92IndelModel;
+/// use phyne::tree;
+/// # use phyne::Result;
+///
+/// # fn main() -> Result<()> {
+/// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+/// // The maximum number of inserted links (=fragments) in a single insertion event.
+/// let max_ins_len = Some(50);
+/// let simulator = TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+/// let mut rng = DefaultGenerator::new(123);
+/// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+///
+/// // the fragments partition the columns of the alignment
+/// let boundaries = result.fragmentation.right_exclusive_boundaries();
+/// assert_eq!(boundaries.last().copied(), Some(result.phylo.msa.len()));
+/// # Ok(()) }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Fragmentation {
     right_exclusive_boundaries: Vec<usize>,
@@ -37,17 +60,84 @@ impl Fragmentation {
     /// Returns the right-exclusive boundaries of the fragments, i.e., for `n` fragments the
     /// indices `f_0 < ... < f_{n-1}` such that fragment `i` spans columns `[f_{i-1}, f_i)`.
     /// Note that the first fragment starts at column 0, so `f_{-1} = 0` is implicit and
-    /// therefore `f_0 > 0` and f_{n-1} = alignment.len()`.
+    /// therefore `f_0 > 0` and `f_{n-1} = alignment.len()`.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// // The maximum number of inserted links (=fragments) in a single insertion event.
+    /// let max_ins_len = Some(50);
+    /// let simulator = TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+    ///
+    /// let boundaries = result.fragmentation.right_exclusive_boundaries();
+    /// // the first fragment starts at column 0, so the first boundary is at least 1
+    /// assert!(boundaries[0] >= 1);
+    /// // boundaries are strictly increasing and the last one is the alignment length
+    /// assert!(boundaries.windows(2).all(|w| w[0] < w[1]));
+    /// assert_eq!(boundaries.last().copied(), Some(result.phylo.msa.len()));
+    /// # Ok(()) }
+    /// ```
     pub fn right_exclusive_boundaries(&self) -> &[usize] {
         &self.right_exclusive_boundaries
     }
 
     /// Returns the number of fragments.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+    /// use phyne::tkf_model::TKF91IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// let max_ins_len = None;
+    /// let simulator = TKFIndelMSASimulator::new(TKF91IndelModel::default(), tree, max_ins_len)?;
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+    ///
+    /// // in TKF91 every residue is its own fragment, so there is one fragment per column
+    /// assert_eq!(result.fragmentation.len(), result.phylo.msa.len());
+    /// # Ok(()) }
+    /// ```
     pub fn len(&self) -> usize {
         self.right_exclusive_boundaries.len()
     }
 
     /// Returns whether the fragmentation is empty, i.e., whether the alignment has no columns.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::MASA;
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::tkf_model::simulate_msa::TKFIndelMSASimulator;
+    /// use phyne::tkf_model::TKF92IndelModel;
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// let max_ins_len = Some(50);
+    /// let simulator = TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
+    ///
+    /// assert!(!result.fragmentation.is_empty());
+    /// # Ok(()) }
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.right_exclusive_boundaries.is_empty()
     }

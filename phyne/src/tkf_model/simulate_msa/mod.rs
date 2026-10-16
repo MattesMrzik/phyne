@@ -1,20 +1,19 @@
-//! Simulation of ancestral alignments under a TKF model.
+//! Simulation of ancestral alignments under a [`TKFModel`](crate::tkf_model::TKFModel).
 //!
 //! This module provides simulators that evolve sequences down a [`Tree`](`crate::tree::Tree`)
 //! according to the TKF indel model, optionally combined with a substitution model:
 //!
 //! - [`TKFIndelMSASimulator`] simulates only the indel process, producing an ancestral
 //!   alignment of [`GAP`](`crate::alphabets::GAP`)s and [`AMB_CHAR`](`crate::alphabets::AMB_CHAR`)s
-//!   that represents the indel history, together with a [`Fragmentation`].
-//! - [`TKFMSASimulator`] runs the indel simulator first and then simulates substitutions
-//!   on the resulting columns, placing gaps according to the indel MSA.
+//!   that represents the indel history.
+//! - [`TKFMSASimulator`] simulates both the indel and substitution processes.
 //!
-//! Both simulators return a [`TKFSimulationResult`] containing the ancestral alignment
-//! (e.g., an [`MASA`](`crate::alignment::MASA`)), the [`Fragmentation`] and the
-//! [`Tree`](`crate::tree::Tree`). Note that some columns may go
-//! extinct, i.e., all leaf sequences have a gap in that column, and that leaves whose
-//! aligned sequence consists only of gaps may appear. Use
-//! [`TKFSimulationResult::remove_extinct_columns`] to remove the extinct columns (and keep
+//! Both simulators return a [`TKFSimulationResult`] containing the
+//! [`PhyloInfo`](`crate::phylo_info::PhyloInfo`) with the simulated ancestral alignment and the
+//! tree that was used for the simulation, as well as the [`Fragmentation`] of the alignment.
+//! Note that some columns may go extinct, i.e., all leaf sequences have a gap in that column,
+//! and that leaves whose aligned sequence consists only of gaps may appear.
+//! Use [`TKFSimulationResult::remove_extinct_columns`] to remove the extinct columns (and keep
 //! the fragmentation in sync) and [`crate::phylo_info::PhyloInfo::prune_empty_leaves`] to prune the
 //! gap-only leaves (and their ancestors) from both the tree and the alignment.
 //!

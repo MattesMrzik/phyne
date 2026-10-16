@@ -1,8 +1,7 @@
 //! Simulation of alignments and ancestral alignments by substitutions only.
 //!
 //! This module provides the [`SubstitutionSimulator`] which evolves characters down a
-//! [`Tree`](`crate::tree::Tree`) under a substitution model, producing a
-//! [MASA](`crate::alignment::MASA`) without any gaps.
+//! [`Tree`](`crate::tree::Tree`) under a substitution model, producing an alignment without any gaps.
 //!
 //! # Example
 //! ```
@@ -45,9 +44,7 @@ use crate::{bug, Result, MAX_BLEN};
 /// Simulates substitutions on a fixed-length ancestral alignment.
 ///
 /// The root sequence is sampled from the substitution model's stationary distribution and
-/// evolved down the tree along the branches. The simulation produces no gaps; it is useful
-/// on its own or in combination with an indel simulator, where the indel-only MSA is used as
-/// a mask over this substitution-only MSA (e.g. [`crate::tkf_model::simulate_msa::TKFMSASimulator`]).
+/// evolved down the tree along the branches. The simulation produces no gaps.
 #[derive(Debug, Clone)]
 pub struct SubstitutionSimulator {
     tree: Tree,
@@ -67,6 +64,25 @@ impl SubstitutionSimulator {
     /// alignment length.
     ///
     /// A zero `alignment_length` is accepted, but simulation will emit a warning and return an empty alignment.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, AlignmentSimulation, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::substitution_models::{dna_models::JC69, SubstModel, SubstitutionSimulator};
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// let msa_len = 20;
+    /// let simulator = SubstitutionSimulator::new(SubstModel::<JC69>::default(), tree, msa_len)?;
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);
+    /// assert_eq!(phylo.msa.seq_count(), 3);
+    /// assert_eq!(phylo.msa.len(), msa_len);
+    /// # Ok(()) }
+    /// ```
     ///
     /// # Errors
     /// * If the tree node IDs cannot be completed (see
@@ -112,6 +128,28 @@ impl SubstitutionSimulator {
     /// Sets the alignment length for the simulation.
     ///
     /// A zero `alignment_length` is accepted, but simulation will emit a warning and return an empty alignment.
+    ///
+    /// # Example
+    /// ```
+    /// use phyne::alignment::{Alignment, AlignmentSimulation, MASA};
+    /// use phyne::random::DefaultGenerator;
+    /// use phyne::substitution_models::{dna_models::JC69, SubstModel, SubstitutionSimulator};
+    /// use phyne::tree;
+    /// # use phyne::Result;
+    ///
+    /// # fn main() -> Result<()> {
+    /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
+    /// let msa_len = 20;
+    /// let mut simulator =
+    ///     SubstitutionSimulator::new(SubstModel::<JC69>::default(), tree, msa_len)?;
+    /// let new_msa_len = 100;
+    /// simulator.alignment_length(new_msa_len);
+    ///
+    /// let mut rng = DefaultGenerator::new(123);
+    /// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);
+    /// assert_eq!(phylo.msa.len(), new_msa_len);
+    /// # Ok(()) }
+    /// ```
     pub fn alignment_length(&mut self, length: usize) {
         self.alignment_length = length;
     }
