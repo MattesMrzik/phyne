@@ -137,7 +137,7 @@ pub trait AncestralAlignment: Alignment {
         all_seqs.remove_gap_cols();
         let ancestral_alignment = Self::from_aligned_with_ancestral_unchecked(all_seqs, tree);
         let surviving = surviving_columns_mask(&ancestral_alignment.msa);
-        if surviving.is_clear() {
+        if !surviving.is_full() {
             warn!(
                 "Columns {} go extinct in all leaf sequences. \
                 Consider calling `remove_extinct_columns` on the alignment.",
