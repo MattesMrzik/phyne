@@ -34,7 +34,7 @@ use crate::{bug, record_wo_desc as record, Result};
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
 /// // The maximum number of inserted links (=fragments) in a single insertion event.
 /// let max_ins_len = Some(50);
-/// let mut simulator = TKFMSASimulator::new(
+/// let simulator = TKFMSASimulator::new(
 ///     TKF92IndelModel::default(),
 ///     SubstModel::<JC69>::default(),
 ///     tree,
@@ -42,7 +42,7 @@ use crate::{bug, record_wo_desc as record, Result};
 /// )?;
 /// // Fix the root sequence to exactly 100 characters.
 /// let root_len = 100;
-/// simulator.root_length(RootLength::Defined(root_len));
+/// let simulator = simulator.root_length(RootLength::Defined(root_len));
 /// let mut rng = DefaultGenerator::new(123);
 /// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);
 /// assert_eq!(phylo.msa.seq_count(), 3);
@@ -105,14 +105,14 @@ where
     /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
     /// // The maximum number of inserted links (=fragments) in a single insertion event.
     /// let max_ins_len = Some(50);
-    /// let mut simulator = TKFMSASimulator::new(
+    /// let simulator = TKFMSASimulator::new(
     ///     TKF92IndelModel::default(),
     ///     SubstModel::<JC69>::default(),
     ///     tree,
     ///     max_ins_len,
     /// )?;
     /// let root_len = 100;
-    /// simulator.root_length(RootLength::Defined(root_len));
+    /// let simulator = simulator.root_length(RootLength::Defined(root_len));
     ///
     /// let mut rng = DefaultGenerator::new(123);
     /// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);

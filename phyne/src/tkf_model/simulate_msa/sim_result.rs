@@ -50,8 +50,8 @@ impl<AA: AncestralAlignment> TKFSimulationResult<AA> {
     /// # fn main() -> Result<()> {
     /// let tree = tree!("(A:1.0,B:1.0)R;");
     /// let max_ins_len = None;
-    /// let mut simulator = TKFIndelMSASimulator::new(TKF91IndelModel::default(), tree, max_ins_len)?;
-    /// simulator.root_length(RootLength::Defined(2));
+    /// let simulator = TKFIndelMSASimulator::new(TKF91IndelModel::default(), tree, max_ins_len)?;
+    /// let simulator = simulator.root_length(RootLength::Defined(2));
     /// // Deterministic values for the fake RNG: they make one root character survive to the
     /// // leaves while the other is deleted on all branches, i.e. it goes extinct.
     /// let values = vec![0.0, 0.0, 0.6, 0.6, 0.0];
@@ -99,7 +99,7 @@ mod private_tests {
         TKFSimulationResult {
             phylo,
             fragmentation,
-            logl: dummy_logl, 
+            logl: dummy_logl,
         }
     }
 

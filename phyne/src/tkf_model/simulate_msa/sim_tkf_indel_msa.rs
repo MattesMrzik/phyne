@@ -77,13 +77,13 @@ pub enum RootLength {
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
 /// // The maximum number of inserted links (=fragments) in a single insertion event.
 /// let max_ins_len = Some(50);
-/// let mut simulator = TKFIndelMSASimulator::new(
+/// let simulator = TKFIndelMSASimulator::new(
 ///     TKF92IndelModel::default(),
 ///     tree,
 ///     max_ins_len,
 /// )?;
 /// // Fix the root sequence to exactly 100 characters.
-/// simulator.root_length(RootLength::Defined(100));
+/// let simulator = simulator.root_length(RootLength::Defined(100));
 /// let seed = 123;
 /// let mut rng = DefaultGenerator::new(seed);
 /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);

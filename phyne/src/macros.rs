@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues."
+        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues"
     )]
     fn bug_macro_without_error() {
         bug!("custom failure");
