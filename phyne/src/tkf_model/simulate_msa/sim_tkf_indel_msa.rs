@@ -120,61 +120,78 @@ where
     }
 }
 
-/// All the descendant links associated to a single branch.
-type BranchLinkChildren = Vec<TKFLink>;
-
-struct TKFLink {
-    /// The node in the tree the link is associated with.
-    node: NodeIdx,
-    /// True if the link is immortal. It's the link to the very left of the sequence.
-    is_immortal: bool,
-    /// How many characters are associated to the right of this link.
-    length: usize,
-    /// For every child node/branch of this link's node, the descendant links.
-    children: Vec<BranchLinkChildren>,
-    /// For every child node/branch of this link's node, the [`LinkFate`] of this link.
-    fates: Vec<LinkFate>,
-    /// Whether this link was produced by an insertion event.
-    is_insertion: bool,
+/// Holds the descendant immortal link as well as insertions produced by the immortal link on a branch.
+struct ImmortalBranch {
+    lineage: ImmortalLink,
+    insertions: Vec<MortalLink>,
 }
 
-impl TKFLink {
-    fn new_immortal(node: NodeIdx) -> Self {
-        TKFLink {
+struct ImmortalLink {
+    /// The node in the tree where this immortal link is located.
+    node: NodeIdx,
+    /// For every child node of the tree, holds the descendant immortal link and any insertions
+    /// produced by the immortal link.
+    offspring: Vec<ImmortalBranch>,
+}
+
+impl ImmortalLink {
+    fn new(node: NodeIdx) -> Self {
+        ImmortalLink {
             node,
-            is_immortal: true,
-            length: 0,
-            children: Vec::new(),
-            fates: Vec::new(),
-            is_insertion: false,
+            offspring: Vec::new(),
         }
     }
+}
 
-    fn new(node: NodeIdx, length: usize) -> Self {
-        TKFLink {
+/// Holds the descendant mortal link (if it survives) as well as insertions produced by the mortal
+/// link on a branch and the child node of the branch.
+struct MortalBranch {
+    child_node: NodeIdx,
+    survies: Option<MortalLink>,
+    insertions: Vec<MortalLink>,
+}
+
+struct MortalLink {
+    /// The node in the tree where this mortal link is located.
+    node: NodeIdx,
+    /// The length of the link, i.e., the number of characters in the fragment.
+    length: usize,
+    /// Whether this link is an insertion (true) or a homologous link (false). Links in the root
+    /// sequences are treated as homologous.
+    is_insertion: bool,
+    /// For every child node of the tree, holds the descendant mortal link (if it survives) and any
+    /// insertions produced by the mortal link.
+    offspring: Vec<MortalBranch>,
+}
+
+impl MortalLink {
+    fn new_homolog(node: NodeIdx, length: usize) -> Self {
+        MortalLink {
             node,
-            is_immortal: false,
             length,
-            children: Vec::new(),
-            fates: Vec::new(),
             is_insertion: false,
+            offspring: Vec::new(),
         }
     }
 
     fn new_insertion(node: NodeIdx, length: usize) -> Self {
-        TKFLink {
+        MortalLink {
             node,
-            is_immortal: false,
             length,
-            children: Vec::new(),
-            fates: Vec::new(),
             is_insertion: true,
+            offspring: Vec::new(),
         }
     }
 }
 
-#[derive(Clone)]
-enum LinkFate {
+/// Holds the immortal link and all mortal links associated to the root of the tree.
+struct LinkChain {
+    immortal: ImmortalLink,
+    mortals: Vec<MortalLink>,
+}
+
+#[derive(Clone, Debug)]
+enum MortalLinkFate {
     /// The link is deleted.
     Deletion,
     /// The link survives on the branch and produces `usize` many insertions to the right of it.
@@ -286,7 +303,7 @@ where
     ) -> (TKFSimulationResult<AA>, f64) {
         *self.cumulative_logl.borrow_mut() = 0.0;
         let links = self.build_msa_links(rng);
-        let (phylo, fragmentation) = self.links_to_msa(&links);
+        let (phylo, fragmentation) = self.links_to_msa(links);
         let result = TKFSimulationResult {
             phylo,
             fragmentation,
@@ -346,7 +363,7 @@ where
 
     /// Builds the links associated with the root of the tree. This includes one immortal
     /// link and a number of mortal links either sampled or defined.
-    fn build_root_links<R: Rng + SeedableRng>(&self, rng: &mut RandomGenerator<R>) -> Vec<TKFLink> {
+    fn build_root_links<R: Rng + SeedableRng>(&self, rng: &mut RandomGenerator<R>) -> LinkChain {
         let min_needed_links = match self.root_length {
             RootLength::Sampled => self.sample_num_root_links(rng),
             RootLength::Defined(len) => len,
@@ -357,16 +374,14 @@ where
             RootLength::Expected => Some(self.indel_model.expected_root_length().round() as usize),
             RootLength::Sampled => None,
         };
-        let mut root_links = Vec::with_capacity(min_needed_links + 1); // +1 for the immortal link
-        root_links.push(TKFLink::new_immortal(self.tree.root));
-
+        let mut root_mortals = Vec::with_capacity(min_needed_links);
         let mut current_total_root_len = 0;
         for _ in 0..min_needed_links {
             let frag_length = self.sample_fragment_length(rng);
             match max_root_seq_len {
                 Some(max_len) => {
                     if current_total_root_len + frag_length <= max_len {
-                        root_links.push(TKFLink::new(self.tree.root, frag_length));
+                        root_mortals.push(MortalLink::new_homolog(self.tree.root, frag_length));
                         current_total_root_len += frag_length;
                     } else {
                         let remaining_len = max_len - current_total_root_len;
@@ -374,107 +389,131 @@ where
                         // sequence. A zero-length link would add no characters but would still
                         // push a fragment boundary equal to the previous one, so it is skipped.
                         if remaining_len > 0 {
-                            root_links.push(TKFLink::new(self.tree.root, remaining_len));
+                            root_mortals
+                                .push(MortalLink::new_homolog(self.tree.root, remaining_len));
                         }
                         break;
                     }
                 }
                 _ => {
-                    root_links.push(TKFLink::new(self.tree.root, frag_length));
+                    root_mortals.push(MortalLink::new_homolog(self.tree.root, frag_length));
                 }
             }
         }
-        root_links
+
+        LinkChain {
+            immortal: ImmortalLink::new(self.tree.root),
+            mortals: root_mortals,
+        }
     }
 
     /// First [builds the root links](`Self::build_root_links`)) and then
     /// [evolves them down the tree](`Self::evolve_link_down_tree`) to produce the full link
     /// structure of the MSA.
-    fn build_msa_links<R: Rng + SeedableRng>(&self, rng: &mut RandomGenerator<R>) -> Vec<TKFLink> {
+    fn build_msa_links<R: Rng + SeedableRng>(&self, rng: &mut RandomGenerator<R>) -> LinkChain {
         let mut root_links = self.build_root_links(rng);
-        for link in root_links.iter_mut() {
+        self.evolve_immortal(&mut root_links.immortal, rng);
+        for link in root_links.mortals.iter_mut() {
             // TODO: this can be parallelized. Also, the conversion to to alignment, i.e., the
             // progressive appending to it can be done after a root link is done evolving down the
             // tree, which would allow for more efficient memory usage since we won't have to keep
             // the whole link structure in memory at once.
             // See issue #163 https://github.com/acg-team/rust-phylo/issues/163
-            self.evolve_link_down_tree(link, rng);
+            self.evolve_mortal(link, rng);
         }
         root_links
     }
 
-    /// Evolves a single link down the tree, by sampling its fate on every branch and creating the
-    /// descendant links accordingly.
-    fn evolve_link_down_tree<R: Rng + SeedableRng>(
+    /// Evolves a single immortal link down the tree, by creating the descendant immortal links,
+    /// and creating any insertions produced by the immortal link on the branch.
+    fn evolve_immortal(
         &self,
-        link: &mut TKFLink,
+        link: &mut ImmortalLink,
+        rng: &mut RandomGenerator<impl Rng + SeedableRng>,
+    ) {
+        for child_node in self.tree.children(&link.node) {
+            let mut child_link = ImmortalLink::new(*child_node);
+            self.evolve_immortal(&mut child_link, rng);
+            let branch_length = self.tree.node(child_node).blen;
+            let num_insertions = self.sample_immortal_link_insertions(branch_length, rng);
+            let insertions = self.evolve_insertions(num_insertions, child_node, rng);
+            link.offspring.push(ImmortalBranch {
+                lineage: child_link,
+                insertions,
+            });
+        }
+    }
+
+    /// Evolves a single mortal link down the tree, by sampling its fate on every branch and creating the
+    /// descendant links accordingly.
+    fn evolve_mortal<R: Rng + SeedableRng>(
+        &self,
+        link: &mut MortalLink,
         rng: &mut RandomGenerator<R>,
     ) {
-        for (branch_id, child_node) in self.tree.children(&link.node).iter().enumerate() {
-            link.children.push(Vec::new());
+        for child_node in self.tree.children(&link.node) {
             let branch_length = self.tree.node(child_node).blen;
-            if link.is_immortal {
-                //  immortal link always survives and evolves down the tree
-                let child_link = TKFLink::new_immortal(*child_node);
-                link.children[branch_id].push(child_link);
-                self.evolve_link_down_tree(link.children[branch_id].last_mut().unwrap(), rng);
-                // new insertions
-                let num_insertions = self.sample_tkf_immortal_link_fate(branch_length, rng);
-                self.evolve_insertions(num_insertions, link, branch_id, rng);
-            } else {
-                let fate = self.sample_tkf_link_fate(branch_length, rng);
-                link.fates.push(fate.clone());
-                match fate {
-                    LinkFate::Deletion => {
-                        // link is deleted, do nothing
-                    }
-                    LinkFate::Homolog(num_children) => {
-                        // the surviving homologous link
-                        let child_link = TKFLink::new(*child_node, link.length);
-                        link.children[branch_id].push(child_link);
-                        self.evolve_link_down_tree(
-                            link.children[branch_id].last_mut().unwrap(),
-                            rng,
-                        );
-                        // new insertions
-                        self.evolve_insertions(num_children, link, branch_id, rng);
-                    }
-                    LinkFate::NonHomolog(num_children) => {
-                        // original link is deleted, do not evolve_link_down_tree
-                        // new insertions
-                        self.evolve_insertions(num_children, link, branch_id, rng);
-                    }
+            let fate = self.sample_mortal_link_fate(branch_length, rng);
+            match fate {
+                MortalLinkFate::Deletion => {
+                    // link is deleted, inserting 'dead end' branch
+                    link.offspring.push(MortalBranch {
+                        child_node: *child_node,
+                        survies: None,
+                        insertions: Vec::new(),
+                    });
+                }
+                MortalLinkFate::Homolog(num_children) => {
+                    // the surviving homologous link
+                    let mut child_link = MortalLink::new_homolog(*child_node, link.length);
+                    self.evolve_mortal(&mut child_link, rng);
+                    // new insertions
+                    let insertions = self.evolve_insertions(num_children, child_node, rng);
+                    link.offspring.push(MortalBranch {
+                        child_node: *child_node,
+                        survies: Some(child_link),
+                        insertions,
+                    });
+                }
+                MortalLinkFate::NonHomolog(num_children) => {
+                    // original link is deleted, do not evolve_link_down_tree
+                    // new insertions
+                    let insertions = self.evolve_insertions(num_children, child_node, rng);
+                    link.offspring.push(MortalBranch {
+                        child_node: *child_node,
+                        survies: None,
+                        insertions,
+                    });
                 }
             }
         }
     }
 
-    /// A helper for [evolve_link_down_tree](`Self::evolve_link_down_tree`) that evolves a `number`
-    /// of insertions on a branch, by creating the insertion links and evolving them down the tree
-    /// as well.
+    /// A helper that evolves a `number` of insertions on a branch,
+    /// by creating the insertion links and evolving them down the tree as well.
     fn evolve_insertions<R: Rng + SeedableRng>(
         &self,
         number: usize,
-        parent_link: &mut TKFLink,
-        branch_id: usize,
+        node: &NodeIdx,
         rng: &mut RandomGenerator<R>,
-    ) {
+    ) -> Vec<MortalLink> {
+        let mut insertions = Vec::with_capacity(number);
         for _ in 0..number {
             let length = self.sample_fragment_length(rng);
-            let node = self.tree.children(&parent_link.node)[branch_id];
-            let insertion_link = TKFLink::new_insertion(node, length);
-            parent_link.children[branch_id].push(insertion_link);
-            self.evolve_link_down_tree(parent_link.children[branch_id].last_mut().unwrap(), rng);
+            let mut insertion_link = MortalLink::new_insertion(*node, length);
+            self.evolve_mortal(&mut insertion_link, rng);
+            insertions.push(insertion_link);
         }
+        insertions
     }
 
     /// Samples the fate of a mortal link on a branch, which includes whether it survives or is
     /// deleted, and how many insertions it produces in either case.
-    fn sample_tkf_link_fate<R: Rng + SeedableRng>(
+    fn sample_mortal_link_fate<R: Rng + SeedableRng>(
         &self,
         time: f64,
         rng: &mut RandomGenerator<R>,
-    ) -> LinkFate {
+    ) -> MortalLinkFate {
         let uniform_sample = rng.random::<f64>();
         let lambda = self.indel_model.lambda();
         let mu = self.indel_model.mu();
@@ -488,7 +527,7 @@ where
         // Link is deleted without producing any insertions
         if uniform_sample < n_0 {
             *self.cumulative_logl.borrow_mut() += (n_0).ln();
-            LinkFate::Deletion
+            MortalLinkFate::Deletion
         } else if uniform_sample < n_0 + homolog_prob_integrated {
             // Link survives homologously
             let adjusted_sample = uniform_sample - n_0;
@@ -502,7 +541,7 @@ where
     }
 
     /// Samples the number of homologous insertions on a branch, given that the original link survives.
-    fn sample_homolog_fate(&self, time: f64, uniform_sample: f64) -> LinkFate {
+    fn sample_homolog_fate(&self, time: f64, uniform_sample: f64) -> MortalLinkFate {
         let lambda = self.indel_model.lambda();
         let mu = self.indel_model.mu();
         let beta = ln_beta(lambda, mu, time).exp();
@@ -513,7 +552,7 @@ where
             cumulative_prob += homolog_prob;
             if uniform_sample < cumulative_prob {
                 *self.cumulative_logl.borrow_mut() += homolog_prob.ln();
-                return LinkFate::Homolog(n);
+                return MortalLinkFate::Homolog(n);
             }
         }
         // didn't return in the loop, capping insertion at length max_insertion_length
@@ -524,11 +563,11 @@ where
             "Capping homologous insertion length at {}",
             self.max_inserted_frag_len
         );
-        LinkFate::Homolog(self.max_inserted_frag_len)
+        MortalLinkFate::Homolog(self.max_inserted_frag_len)
     }
 
     /// Samples the number of non-homologous insertions on a branch, given that the original link is deleted.
-    fn sample_non_homolog_fate(&self, time: f64, uniform_sample: f64) -> LinkFate {
+    fn sample_non_homolog_fate(&self, time: f64, uniform_sample: f64) -> MortalLinkFate {
         let lambda = self.indel_model.lambda();
         let mu = self.indel_model.mu();
         let beta = ln_beta(lambda, mu, time).exp();
@@ -538,7 +577,7 @@ where
             cumulative_prob += non_homolog_prob;
             if uniform_sample < cumulative_prob {
                 *self.cumulative_logl.borrow_mut() += non_homolog_prob.ln();
-                return LinkFate::NonHomolog(n);
+                return MortalLinkFate::NonHomolog(n);
             }
         }
         // didn't return in the loop, capping insertion at length max_insertion_length
@@ -549,12 +588,12 @@ where
             "Capping non-homologous insertion length at {}",
             self.max_inserted_frag_len
         );
-        LinkFate::NonHomolog(self.max_inserted_frag_len)
+        MortalLinkFate::NonHomolog(self.max_inserted_frag_len)
     }
 
     /// Since immortal links always survive, we only need to sample how many insertions they
     /// produce, which is what this function does.
-    fn sample_tkf_immortal_link_fate<R: Rng + SeedableRng>(
+    fn sample_immortal_link_insertions<R: Rng + SeedableRng>(
         &self,
         time: f64,
         rng: &mut RandomGenerator<R>,
@@ -578,18 +617,19 @@ where
     }
 
     /// After [simulation of the links](`Self::build_msa_links`) is complete, this function
-    /// calls [`Self::append_link_to_msa`] for every root link to build the final MSA and fragmentation.
+    /// converts those links to build the final [`AncestralAlignment`] and [`Fragmentation`].
     fn links_to_msa<AA: AncestralAlignment>(
         &self,
-        links: &[TKFLink],
+        links: LinkChain,
     ) -> (PhyloInfo<AA>, Fragmentation) {
         let mut msa: Seqs = HashMap::new();
         for node in self.tree.preorder() {
             msa.insert(*node, Vec::new());
         }
         let mut fragmentation: Vec<usize> = Vec::new();
-        for link in links {
-            self.append_link_to_msa(link, &mut msa, &mut fragmentation);
+        self.immortal_to_msa(&links.immortal, &mut msa, &mut fragmentation);
+        for link in &links.mortals {
+            self.mortal_to_msa(link, &mut msa, &mut fragmentation);
         }
 
         let records = msa
@@ -615,8 +655,18 @@ where
         (phylo, fragmentation)
     }
 
-    /// Traverses the link structure on the tree for every root link and progressively builds the alignment.
-    fn append_link_to_msa(&self, link: &TKFLink, msa: &mut Seqs, fragmentation: &mut Vec<usize>) {
+    fn immortal_to_msa(&self, link: &ImmortalLink, msa: &mut Seqs, fragmentation: &mut Vec<usize>) {
+        for branch_child in &link.offspring {
+            // For every immortal link do a DFS traversal, since we need to process the children
+            // before the insertions.
+            self.immortal_to_msa(&branch_child.lineage, msa, fragmentation);
+            for insertion in &branch_child.insertions {
+                self.mortal_to_msa(insertion, msa, fragmentation);
+            }
+        }
+    }
+
+    fn mortal_to_msa(&self, link: &MortalLink, msa: &mut Seqs, fragmentation: &mut Vec<usize>) {
         // Insertions are pushed to the front of the queue so that they the lower insertions on the
         // tree are processed before the higher ones, which ensures that gaps are correctly
         // inserted since lower insertions don't mess with the events higher up in the tree.
@@ -627,58 +677,31 @@ where
             // to maintain the priorities of the insertion events, see the comment above.
             let mut tree_stack = VecDeque::from([insertion_link]);
             while let Some(current_link) = tree_stack.pop_front() {
-                if current_link.is_immortal {
-                    self.dispatch_immortal_children(current_link, &mut tree_stack, &mut insertions);
-                } else {
-                    self.process_link(
-                        current_link,
-                        msa,
-                        fragmentation,
-                        &mut tree_stack,
-                        &mut insertions,
-                    );
-                }
+                self.process_mortal(
+                    current_link,
+                    msa,
+                    fragmentation,
+                    &mut tree_stack,
+                    &mut insertions,
+                );
             }
         }
     }
 
-    /// Pushes the children of an immortal link onto the traversal stacks.
-    ///
-    /// The first child of each branch continues the homolog tree traversal (`tree_stack`) which is
-    /// the immortal surviving; any additional children are new insertions and go onto the `insertions` queue.
-    fn dispatch_immortal_children<'a>(
-        &self,
-        link: &'a TKFLink,
-        tree_stack: &mut VecDeque<&'a TKFLink>,
-        insertions: &mut VecDeque<&'a TKFLink>,
-    ) {
-        debug_assert!(link.is_immortal);
-        for branch_child in &link.children {
-            for (child_id, child_link) in branch_child.iter().enumerate() {
-                if child_id == 0 {
-                    tree_stack.push_back(child_link);
-                } else {
-                    insertions.push_front(child_link);
-                }
-            }
-        }
-    }
-
-    /// Writes one non-immortal link's contribution to the MSA and updates the traversal stacks.
+    /// Writes one mortal link's contribution to the MSA and updates the traversal stacks.
     ///
     /// - Appends `AMB_CHAR * length` to the owning node.
     /// - Records a fragmentation boundary for root-owned links and insertion links.
-    /// - Fills `NOTHING_CHAR` gaps into all non-owning nodes for insertion links.
+    /// - Fills [`GAP`]s into all non-owning nodes for insertion links.
     /// - Applies each branch fate: queues homolog/insertion children, or fills deletion gaps.
-    fn process_link<'a>(
+    fn process_mortal<'a>(
         &self,
-        link: &'a TKFLink,
+        link: &'a MortalLink,
         msa: &mut Seqs,
         fragmentation: &mut Vec<usize>,
-        tree_stack: &mut VecDeque<&'a TKFLink>,
-        insertions: &mut VecDeque<&'a TKFLink>,
+        tree_stack: &mut VecDeque<&'a MortalLink>,
+        insertions: &mut VecDeque<&'a MortalLink>,
     ) {
-        debug_assert!(!link.is_immortal);
         let seq = msa.get_mut(&link.node).unwrap();
         let new_len = seq.len() + link.length;
         seq.resize(new_len, AMB_CHAR);
@@ -689,49 +712,38 @@ where
         if link.is_insertion {
             self.insertion_gaps(link.length, msa, &link.node);
         }
-        for (branch_id, child_links) in link.children.iter().enumerate() {
-            self.apply_fate(link, branch_id, child_links, msa, tree_stack, insertions);
+        for branch in &link.offspring {
+            self.apply_fate(branch, link.length, msa, tree_stack, insertions);
         }
     }
 
-    /// Applies a single branch fate for a non-immortal link.
+    /// Applies a single branch fate for a mortal link.
     ///
     /// - `Homolog`: queues the surviving child onto `tree_stack` and its insertions onto `insertions`.
-    /// - `Deletion` / `NonHomolog`: fills deletion gaps for all descendants; `NonHomolog` also
+    /// - `Deletion` / `NonHomolog`: fills deletion [`GAP`]s for all descendants; `NonHomolog` also
     ///   queues the new insertion children.
     fn apply_fate<'a>(
         &self,
-        link: &'a TKFLink,
-        branch_id: usize,
-        child_links: &'a [TKFLink],
+        branch: &'a MortalBranch,
+        length: usize,
         msa: &mut Seqs,
-        tree_stack: &mut VecDeque<&'a TKFLink>,
-        insertions: &mut VecDeque<&'a TKFLink>,
+        tree_stack: &mut VecDeque<&'a MortalLink>,
+        insertions: &mut VecDeque<&'a MortalLink>,
     ) {
-        debug_assert!(!link.is_immortal);
-        match &link.fates[branch_id] {
-            LinkFate::Homolog(_) => {
-                tree_stack.push_back(&child_links[0]);
-                for l in child_links.iter().skip(1) {
+        match branch.survies {
+            Some(ref child_link) => {
+                tree_stack.push_back(child_link);
+                for l in &branch.insertions {
                     insertions.push_front(l);
                 }
             }
-            LinkFate::Deletion => {
-                let child_node = self.tree.children(&link.node)[branch_id];
-                for descendant_node in self.tree.preorder_subroot(&child_node) {
-                    let seq = msa.get_mut(&descendant_node).unwrap();
-                    let new_len = seq.len() + link.length;
-                    seq.resize(new_len, GAP);
-                }
-            }
-            LinkFate::NonHomolog(_) => {
-                for l in child_links {
+            None => {
+                for l in &branch.insertions {
                     insertions.push_front(l);
                 }
-                let child_node = self.tree.children(&link.node)[branch_id];
-                for descendant_node in self.tree.preorder_subroot(&child_node) {
+                for descendant_node in self.tree.preorder_subroot(&branch.child_node) {
                     let seq = msa.get_mut(&descendant_node).unwrap();
-                    let new_len = seq.len() + link.length;
+                    let new_len = seq.len() + length;
                     seq.resize(new_len, GAP);
                 }
             }
@@ -906,10 +918,9 @@ mod private_tests {
             // Should be so large that it doesn't kick in. Because otherwise the
             // accumulated logl would not match the clean cost. Since event probabilities
             // are summed together for the case of drawing a max_insertion_length.
-            let max_insertion_length = 100;
+            let max_insertion_length = Some(100);
             let simulator =
-                TKFIndelMSASimulator::new(tkf_model, tree.clone(), Some(max_insertion_length))
-                    .unwrap();
+                TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_insertion_length).unwrap();
             let mut rng = DefaultGenerator::new(seed);
             let (result, logl): (TKFSimulationResult<MASA>, f64) =
                 simulator.simulate_with_fragments_and_logl(&mut rng);
@@ -957,7 +968,10 @@ mod private_tests {
             let (result, logl): (TKFSimulationResult<MASA>, f64) =
                 simulator.simulate_with_fragments_and_logl(&mut rng);
             let alignment = result.phylo.msa;
-            assert_eq!(alignment.seq_count() + alignment.ancestral_seqs().len(), 19);
+            assert_eq!(
+                alignment.seq_count() + alignment.ancestral_seqs().len(),
+                tree.len()
+            );
 
             // In TKF91 every residue is its own independent link (fragment length == 1), so the
             // fragmentation must be exactly [1, 2, 3, ..., n_cols].
@@ -1016,7 +1030,7 @@ mod private_tests {
             simulator.root_length(RootLength::Expected);
             let mut rng = DefaultGenerator::new(seed);
             let root_links = simulator.build_root_links(&mut rng);
-            for (i, link) in root_links.iter().skip(1).enumerate() {
+            for (i, link) in root_links.mortals.iter().enumerate() {
                 assert!(
                     link.length > 0,
                     "seed {seed}: zero-length root link at index {}",
@@ -1062,11 +1076,11 @@ mod private_tests {
         // sampling loops are exhausted and the insertion length is capped.
         assert!(matches!(
             simulator.sample_homolog_fate(1.0, 1.0),
-            LinkFate::Homolog(0)
+            MortalLinkFate::Homolog(0)
         ));
         assert!(matches!(
             simulator.sample_non_homolog_fate(1.0, 1.0),
-            LinkFate::NonHomolog(0)
+            MortalLinkFate::NonHomolog(0)
         ));
     }
 }

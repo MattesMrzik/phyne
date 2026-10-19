@@ -287,7 +287,7 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     ///   meaningful tree.
     pub fn prune_empty_leaves(self) -> Result<Self> {
         // Collect the leaves whose aligned sequence consists only of gaps. For each of them
-        // the parent node is also removed from the MASA when the tree is pruned.
+        // the parent node is also removed from the AA when the tree is pruned.
         let leaves_to_remove = self.all_gap_leaves();
         if leaves_to_remove.is_empty() {
             return Ok(self);
