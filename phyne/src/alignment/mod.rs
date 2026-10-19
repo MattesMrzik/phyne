@@ -473,6 +473,9 @@ impl Alignment for MASA {
         &self.internal_alignments
     }
 
+    /// Constructs a [`PhyloInfo`] from aligned leaf sequences and a phylogenetic tree, inferring
+    /// ancestral sequences using the ASR method [`ParsimonyPresenceAbsence`].
+    ///
     /// # Example
     /// ```
     /// use phyne::alignment::{Alignment, AncestralAlignment, MASA, Sequences};
@@ -520,6 +523,9 @@ impl Alignment for MASA {
         asr.reconstruct_ancestral_seqs(phylo)
     }
 
+    /// Constructs a [`PhyloInfo`] from aligned leaf sequences and a phylogenetic tree, inferring
+    /// ancestral sequences using the ASR method [`ParsimonyPresenceAbsence`]. Does not perform any
+    /// checks on the inputs.
     fn from_aligned_unchecked(sequences: Sequences, tree: Tree) -> PhyloInfo<Self> {
         let phylo = MSA::from_aligned_unchecked(sequences, tree);
         // TODO: do the internal alignments, built in the above line, conform with adding ancestral seqs?
@@ -770,8 +776,8 @@ impl MASA {
 
 /// Simulates sequences along a tree producing an alignment.
 ///
-/// Implementors simulate sequences down a [`Tree`] according to some evolutionary model
-/// (e.g. substitutions only, or a TKF indel + substitution process) and can produce
+/// Simulates sequences along a [`Tree`] according to some evolutionary model
+/// (e.g. substitutions only, or a TKF indel + substitution process) and produces
 /// either an ancestral alignment or an alignment of only the leaf sequences.
 pub trait AlignmentSimulation<R: Rng + SeedableRng> {
     /// Simulates an ancestral alignment, i.e. an alignment that also contains sequences for
@@ -792,8 +798,6 @@ pub trait AlignmentSimulation<R: Rng + SeedableRng> {
         self.simulate_ancestral_alignment::<MASA>(rng)
             .discard_ancestral_seqs()
     }
-    /// Returns the tree the simulation is performed on.
-    fn tree(&self) -> &Tree;
 }
 
 #[cfg(test)]

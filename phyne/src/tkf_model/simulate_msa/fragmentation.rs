@@ -219,9 +219,7 @@ impl Fragmentation {
             let fragment_range = prev_border..*frag_border;
             if !keep_col_mask.contains_any_in_range(fragment_range.clone()) {
                 removed_so_far += fragment_range.len();
-                // not keep ie remove
             } else if keep_col_mask.contains_all_in_range(fragment_range) {
-                // keep
                 new_fragmentation.push(*frag_border - removed_so_far);
             } else {
                 bug!(format!(

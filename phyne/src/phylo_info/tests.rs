@@ -544,7 +544,6 @@ fn prune_empty_leaves_leaf_only() {
 
     let PhyloInfo { msa, tree } = phylo;
 
-    // desctudt the phylo_info into msa and tree
     assert_eq!(msa.seq_count(), 2); // A1, B2
     assert_eq!(msa.ancestral_seqs().len(), 1); // I3
     assert_eq!(msa.len(), 8);

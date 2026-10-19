@@ -121,9 +121,10 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
     /// Builds the PhyloInfo struct from the sequence file and the tree file (if provided).
     /// If the provided tree file has more than one tree, only the first tree will be processed.
     /// If no tree file is provided, an NJ tree is built from the sequences.
+    /// If the leaf sequences are not aligned, they will be aligned using the provided aligner or
+    /// [parsimony](`ParsimonyAligner`) by default.
     /// Bails if no sequences are provided.
     /// Bails if the IDs of the tree leaves and the sequences do not match.
-    /// Bails if the sequences are not aligned.
     /// Returns the PhyloInfo struct with the model type, tree, msa and leaf encoding set.
     ///
     /// # Example
@@ -162,10 +163,34 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
         Ok(phylo)
     }
 
+    /// Builds the PhyloInfo struct from the sequence file and the tree file (if provided).
+    /// If sequences are only provided for the leaves, ancestral sequences will be inferred
+    /// using the provided ASR method or [parsimony](`ParsimonyPresenceAbsence`) by default.
+    /// If no tree file is provided, an NJ tree is built from the sequences.
+    /// If the leaf sequences are not aligned, they will be aligned using the provided aligner or
+    /// [parsimony](`ParsimonyAligner`) by default.
+    ///
+    /// # Errors
+    ///
+    /// * Bails if no sequences are provided.
+    /// * Bails if the IDs of the tree leaves and the sequences do not match.
+    /// * Bails if unaligned ancestral sequences are provided, as this is not supported.
     pub fn build_with_ancestors(self) -> Result<PhyloInfo<AA>> {
         self.build_with_ancestors_w_rng(&mut DefaultGenerator::default())
     }
 
+    /// Builds the PhyloInfo struct from the sequence file and the tree file (if provided).
+    /// If sequences are only provided for the leaves, ancestral sequences will be inferred
+    /// using the provided ASR method or [parsimony](`ParsimonyPresenceAbsence`) by default.
+    /// If no tree file is provided, an NJ tree is built from the sequences.
+    /// If the leaf sequences are not aligned, they will be aligned using the provided aligner or
+    /// [parsimony](`ParsimonyAligner`) by default.
+    ///
+    /// # Errors
+    ///
+    /// * Bails if no sequences are provided.
+    /// * Bails if the IDs of the tree leaves and the sequences do not match.
+    /// * Bails if unaligned ancestral sequences are provided, as this is not supported.
     pub fn build_with_ancestors_w_rng<R>(
         self,
         rng: &mut RandomGenerator<R>,
@@ -179,9 +204,7 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
         let phylo = if sequences.len() == tree.n {
             set_missing_tree_node_ids(&mut tree)?;
             if sequences.aligned {
-                info!(
-                    "Aligned sequences without ancestral sequences. Inferring ancestral sequences"
-                );
+                info!("Ancestral sequences are not provided, inferring them");
                 AA::from_aligned(sequences, tree)?
             } else {
                 info!("Sequences are not aligned, aligning");

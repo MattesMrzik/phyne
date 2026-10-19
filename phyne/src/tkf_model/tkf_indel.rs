@@ -422,7 +422,7 @@ impl<T: TKFModel, AA: AncestralAlignment> ModelSearchCost for TKFIndelCost<T, AA
     fn set_freqs(&mut self, _: FreqVector) -> Result<()> {
         bail!(
             EvolutionaryModel,
-            "The TKF indel model does not support setting frequencies"
+            "the TKF indel model does not support setting frequencies"
         );
     }
 
@@ -542,7 +542,7 @@ pub(super) fn ln_n0(mu: f64, ln_beta: f64) -> f64 {
         if x >= NUMERICAL_ISSUE_N0_THRESHOLD {
             bug!(format!(
                 "ln_n0 ({x}) is much larger than 0 but should be at most slightly larger than 0 \
-                 which may happen due to numerical issues"
+                 which may happen due to floating point number precision"
             ));
         }
         0.0

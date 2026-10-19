@@ -140,18 +140,19 @@ impl SubstitutionSimulator {
     /// # fn main() -> Result<()> {
     /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
     /// let msa_len = 20;
-    /// let mut simulator =
+    /// let simulator =
     ///     SubstitutionSimulator::new(SubstModel::<JC69>::default(), tree, msa_len)?;
     /// let new_msa_len = 100;
-    /// simulator.alignment_length(new_msa_len);
+    /// let simulator = simulator.alignment_length(new_msa_len);
     ///
     /// let mut rng = DefaultGenerator::new(123);
     /// let phylo = simulator.simulate_ancestral_alignment::<MASA>(&mut rng);
     /// assert_eq!(phylo.msa.len(), new_msa_len);
     /// # Ok(()) }
     /// ```
-    pub fn alignment_length(&mut self, length: usize) {
+    pub fn alignment_length(mut self, length: usize) -> Self {
         self.alignment_length = length;
+        self
     }
 
     fn simulate_root_sequence<R: Rng + SeedableRng>(
@@ -215,7 +216,8 @@ impl SubstitutionSimulator {
             .unwrap_or_else(|e| bug!("Creating Sequences from simulated records failed", e))
     }
 
-    fn zero_length_phylo_info<AA: AncestralAlignment>(&self) -> PhyloInfo<AA> {
+    /// Returns a PhyloInfo with empty sequences for all nodes in the tree.
+    fn zero_length_seqs_phylo_info<AA: AncestralAlignment>(&self) -> PhyloInfo<AA> {
         let records = self
             .tree
             .preorder()
@@ -239,7 +241,7 @@ impl SubstitutionSimulator {
     ) -> PhyloInfo<AA> {
         if alignment_length == 0 {
             warn!("Alignment length is set to 0, will produce an empty alignment");
-            return self.zero_length_phylo_info();
+            return self.zero_length_seqs_phylo_info();
         }
         let seqs = self.simulate_sequences(alignment_length, rng);
         AA::from_aligned_with_ancestral(seqs, self.tree.clone()).unwrap_or_else(|e| {
@@ -260,10 +262,6 @@ where
         rng: &mut RandomGenerator<R>,
     ) -> PhyloInfo<AA> {
         self.simulate_ancestral_alignment_with_length(self.alignment_length, rng)
-    }
-
-    fn tree(&self) -> &Tree {
-        &self.tree
     }
 }
 
@@ -337,8 +335,9 @@ mod private_tests {
         assert_empty(&alignment);
 
         // zero length set after construction
-        let mut simulator = SubstitutionSimulator::new(model, tree.clone(), 50).unwrap();
-        simulator.alignment_length(0);
+        let simulator = SubstitutionSimulator::new(model, tree.clone(), 50)
+            .unwrap()
+            .alignment_length(0);
         let alignment: MASA = simulator.simulate_ancestral_alignment(&mut rng).msa;
         assert_empty(&alignment);
     }

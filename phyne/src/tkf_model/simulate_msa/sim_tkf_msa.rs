@@ -120,8 +120,9 @@ where
     /// assert_eq!(root_map.iter().filter(|site| site.is_some()).count(), root_len);
     /// # Ok(()) }
     /// ```
-    pub fn root_length(&mut self, root_length: RootLength) {
-        self.indel_sim.root_length(root_length);
+    pub fn root_length(mut self, root_length: RootLength) -> Self {
+        self.indel_sim = self.indel_sim.root_length(root_length);
+        self
     }
 
     /// Simulates the full TKF process (indels and substitutions) and returns
@@ -162,6 +163,7 @@ where
         let TKFSimulationResult {
             phylo: indel_phylo,
             fragmentation,
+            logl: indel_logl,
         } = self.indel_sim.simulate_with_fragments::<AA, _>(rng);
 
         // Second, substitution semulation
@@ -176,6 +178,7 @@ where
         TKFSimulationResult {
             phylo,
             fragmentation,
+            logl: indel_logl,
         }
     }
 
@@ -249,10 +252,6 @@ where
         rng: &mut RandomGenerator<R>,
     ) -> PhyloInfo<AA> {
         self.simulate_with_fragments(rng).phylo
-    }
-
-    fn tree(&self) -> &Tree {
-        self.indel_sim.tree()
     }
 }
 
@@ -359,9 +358,9 @@ mod private_tests {
         let tkf_model = TKF91IndelModel::new(0.1, 0.2);
 
         let max_ins_len = Some(50);
-        let mut simulator =
+        let simulator =
             TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_ins_len).unwrap();
-        simulator.root_length(RootLength::Defined(100));
+        let simulator = simulator.root_length(RootLength::Defined(100));
 
         let mut rng = DefaultGenerator::new(123);
         let msa = simulator.simulate_ancestral_alignment::<MASA>(&mut rng).msa;
@@ -375,9 +374,9 @@ mod private_tests {
         let subst_model = SubstModel::<JC69>::default();
         let tkf_model = TKF92IndelModel::new(0.1, 0.2, 0.8);
         let max_ins_len = Some(50);
-        let mut simulator =
+        let simulator =
             TKFMSASimulator::new(tkf_model, subst_model, tree.clone(), max_ins_len).unwrap();
-        simulator.root_length(RootLength::Defined(100));
+        let simulator = simulator.root_length(RootLength::Defined(100));
 
         let mut rng = DefaultGenerator::new(123);
         let msa = simulator.simulate_ancestral_alignment::<MASA>(&mut rng).msa;

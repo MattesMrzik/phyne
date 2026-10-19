@@ -97,7 +97,7 @@ pub struct TKFIndelMSASimulator<T: TKFModel + FragmentSampler + ExpectedRootLeng
     tree: Tree,
     cumulative_logl: RefCell<f64>,
     // The maximum number of inserted links (=fragments) in a single insertion event.
-    // If `None`, then there is no limit on the number of inserted links.
+    // If set to `None` in [`TKFIndelMSASimulator::new`], this is set to `i32::MAX`
     max_inserted_frag_len: usize,
     root_length: RootLength,
 }
@@ -113,10 +113,6 @@ where
     ) -> PhyloInfo<AA> {
         let TKFSimulationResult { phylo, .. } = self.simulate_with_fragments(rng);
         phylo
-    }
-
-    fn tree(&self) -> &Tree {
-        &self.tree
     }
 }
 
@@ -258,10 +254,10 @@ where
     /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
     /// // The maximum number of inserted links (=fragments) in a single insertion event.
     /// let max_ins_len = Some(50);
-    /// let mut simulator =
+    /// let simulator =
     ///     TKFIndelMSASimulator::new(TKF92IndelModel::default(), tree, max_ins_len)?;
     /// let root_len = 100;
-    /// simulator.root_length(RootLength::Defined(root_len));
+    /// let simulator = simulator.root_length(RootLength::Defined(root_len));
     ///
     /// let mut rng = DefaultGenerator::new(123);
     /// let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
@@ -269,8 +265,9 @@ where
     /// assert_eq!(root_map.iter().filter(|site| site.is_some()).count(), root_len);
     /// # Ok(()) }
     /// ```
-    pub fn root_length(&mut self, root_length: RootLength) {
+    pub fn root_length(mut self, root_length: RootLength) -> Self {
         self.root_length = root_length;
+        self
     }
 
     /// Returns the tree the simulation is performed on.
@@ -300,16 +297,16 @@ where
     fn simulate_with_fragments_and_logl<AA: AncestralAlignment, R: Rng + SeedableRng>(
         &self,
         rng: &mut RandomGenerator<R>,
-    ) -> (TKFSimulationResult<AA>, f64) {
+    ) -> TKFSimulationResult<AA> {
         *self.cumulative_logl.borrow_mut() = 0.0;
         let links = self.build_msa_links(rng);
         let (phylo, fragmentation) = self.links_to_msa(links);
-        let result = TKFSimulationResult {
+        let logl = *self.cumulative_logl.borrow();
+        TKFSimulationResult {
             phylo,
             fragmentation,
-        };
-        let logl = *self.cumulative_logl.borrow();
-        (result, logl)
+            logl,
+        }
     }
 
     /// Simulates the indel process and produces the corresponding ancestral alignment and fragmentation.
@@ -340,7 +337,7 @@ where
         &self,
         rng: &mut RandomGenerator<R>,
     ) -> TKFSimulationResult<AA> {
-        self.simulate_with_fragments_and_logl(rng).0
+        self.simulate_with_fragments_and_logl(rng)
     }
 
     /// Samples the number of root links from a geometric distribution. Can be zero.
@@ -623,6 +620,8 @@ where
         links: LinkChain,
     ) -> (PhyloInfo<AA>, Fragmentation) {
         let mut msa: Seqs = HashMap::new();
+        // making sure that every node in the tree has a sequence in the MSA, so that we can
+        // safely call unwrap() on getters
         for node in self.tree.preorder() {
             msa.insert(*node, Vec::new());
         }
@@ -922,9 +921,10 @@ mod private_tests {
             let simulator =
                 TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_insertion_length).unwrap();
             let mut rng = DefaultGenerator::new(seed);
-            let (result, logl): (TKFSimulationResult<MASA>, f64) =
+            let result: TKFSimulationResult<MASA> =
                 simulator.simulate_with_fragments_and_logl(&mut rng);
             let alignment = result.phylo.msa;
+            let logl = result.logl;
             assert_eq!(
                 alignment.seq_count() + alignment.ancestral_seqs().len(),
                 tree.len()
@@ -965,9 +965,10 @@ mod private_tests {
             let simulator =
                 TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_insertion_length).unwrap();
             let mut rng = DefaultGenerator::new(seed);
-            let (result, logl): (TKFSimulationResult<MASA>, f64) =
+            let result: TKFSimulationResult<MASA> =
                 simulator.simulate_with_fragments_and_logl(&mut rng);
             let alignment = result.phylo.msa;
+            let logl = result.logl;
             assert_eq!(
                 alignment.seq_count() + alignment.ancestral_seqs().len(),
                 tree.len()
@@ -1025,9 +1026,9 @@ mod private_tests {
         let tree = tree!("(A:1.0,B:1.0)R:1.0;");
         let max_len = Some(50);
         for seed in 0..1000 {
-            let mut simulator =
+            let simulator =
                 TKFIndelMSASimulator::new(tkf_model.clone(), tree.clone(), max_len).unwrap();
-            simulator.root_length(RootLength::Expected);
+            let simulator = simulator.root_length(RootLength::Expected);
             let mut rng = DefaultGenerator::new(seed);
             let root_links = simulator.build_root_links(&mut rng);
             for (i, link) in root_links.mortals.iter().enumerate() {
@@ -1048,8 +1049,8 @@ mod private_tests {
         let tkf_model = TKF92IndelModel::new(lambda, mu, r);
         let tree = tree!("(A:1.0,B:1.0)R:1.0;");
         let max_len = Some(0); // Cap at 0 insertions on branches
-        let mut simulator = TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_len).unwrap();
-        simulator.root_length(RootLength::Defined(10000));
+        let simulator = TKFIndelMSASimulator::new(tkf_model, tree.clone(), max_len).unwrap();
+        let simulator = simulator.root_length(RootLength::Defined(10000));
         let mut rng = DefaultGenerator::new(123);
         let result = simulator.simulate_with_fragments::<MASA, _>(&mut rng);
         let msa = result.phylo.msa;

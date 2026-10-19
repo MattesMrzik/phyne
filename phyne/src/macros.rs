@@ -269,7 +269,7 @@ macro_rules! bug {
     };
     ($msg:expr) => {
         panic!(
-            "{}. This should never happen. Please report this at {}.",
+            "{}. This should never happen. Please report this at {}",
             $msg,
             $crate::REPORT_ISSUES_URL
         )

@@ -30,6 +30,8 @@ pub struct TKFSimulationResult<AA: AncestralAlignment> {
     /// The fragmentation (right-exclusive boundaries of fragments) in sync with the alignment in
     /// `phylo`.
     pub fragmentation: Fragmentation,
+    /// The log-likelihood of the simulated MSA under the model, which is accumulated during the simulation.
+    pub(crate) logl: f64,
 }
 
 impl<AA: AncestralAlignment> TKFSimulationResult<AA> {
@@ -93,9 +95,11 @@ mod private_tests {
     ) -> TKFSimulationResult<MASA> {
         let phylo =
             MASA::from_aligned_with_ancestral(Sequences::new(records).unwrap(), tree).unwrap();
+        let dummy_logl = f64::NAN;
         TKFSimulationResult {
             phylo,
             fragmentation,
+            logl: dummy_logl, 
         }
     }
 

@@ -223,10 +223,12 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     ///
     /// let phylo: PhyloInfo<MSA> = phylo.discard_ancestral_seqs();
     ///
-    /// assert_eq!(phylo.msa.seq_count(), 3);
     /// // column 3 is only gaps in the leaf sequences, so it is removed during the transformation
     /// assert_eq!(phylo.msa.len(), 4);
+    /// assert_eq!(phylo.msa.seq_count(), 3);
     /// assert_eq!(phylo.msa.seqs().record_by_id("A").seq(), b"ACT");
+    /// assert_eq!(phylo.msa.seqs().record_by_id("B").seq(), b"CGT");
+    /// assert_eq!(phylo.msa.seqs().record_by_id("C").seq(), b"AT");
     /// # Ok(()) }
     /// ```
     pub fn discard_ancestral_seqs<A: Alignment>(self) -> PhyloInfo<A> {
@@ -245,7 +247,9 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
     }
 
     /// Removes leaves whose aligned sequence consists only of gaps from both the tree and the
-    /// alignment, collapsing single-child nodes that arise.
+    /// alignment, collapsing single-child nodes that arise. If the root ends up with a single
+    /// child, it is collapsed as well. The branch lengths of any collapsed nodes are transferred to
+    /// the surviving child.
     ///
     /// # Example
     /// ```
@@ -336,8 +340,8 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
                     Internal(_) => self.msa.ancestral_seqs().record_by_id(id),
                     Leaf(_) => self.msa.seqs().record_by_id(id),
                 };
-                let aligned = crate::aligned_seq!(seq_map, record.seq());
-                crate::record!(id, record.desc(), &aligned)
+                let aligned = aligned_seq!(seq_map, record.seq());
+                record!(id, record.desc(), &aligned)
             })
             .collect();
         Sequences::with_alphabet_unchecked(records, self.msa.seqs().alphabet())
@@ -354,7 +358,7 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
 /// # Errors
 /// * If any of the given nodes is not a leaf.
 /// * If removing yields a tree with fewer than two leaves.
-/// * Something went wrong while removing a leaf or collapsing the root, which should not happen less there is a bug.
+/// * Something went wrong while removing a leaf or collapsing the root, which should not happen unless there is a bug.
 fn prune_empty_leaves_from_tree(tree: Tree, leaves_to_remove: &HashSet<NodeIdx>) -> Result<Tree> {
     let mut pruned = tree.clone();
     for leaf_idx in leaves_to_remove {
@@ -444,7 +448,8 @@ fn collapse_root(tree: &mut Tree) {
 /// You should call [`rebuild_masa`] after this to keep the alignment in sync with the rebuilt tree.
 fn rebuild_tree(pruned: &Tree) -> Result<Tree> {
     let newick = pruned.to_newick();
-    // TODO: this does reallocation, could also work on the vecs in place
+    // TODO: this does reallocation, could also work on the vecs in place,
+    // see issue https://github.com/acg-team/phyne/issues/198
     let mut trees = from_newick(&newick)?;
     debug_assert_eq!(trees.len(), 1);
     Ok(trees.pop().unwrap())
