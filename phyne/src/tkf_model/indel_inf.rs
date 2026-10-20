@@ -230,3 +230,123 @@ impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
         curr_cost
     }
 }
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use crate::alignment::{Alignment, AncestralAlignment, Sequences, MASA, MSA};
+    use crate::asr::AncestralSequenceReconstruction;
+    use crate::likelihood::ModelSearchCost;
+    use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
+    use crate::random::DefaultGenerator;
+    use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder, TKFModel};
+    use crate::{record_wo_desc as record, tree, DEFAULT_EPSILON};
+
+    use super::*;
+
+    fn setup_msa() -> PhyloInfo<MSA> {
+        let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
+        MSA::from_aligned(
+            Sequences::new(vec![
+                record!("A1", b"--GTGGA---"),
+                record!("B2", b"-------NNA"),
+                record!("C4", b"AGG-------"),
+            ])
+            .unwrap(),
+            tree,
+        )
+        .unwrap()
+    }
+
+    fn tkf92_logl(model: &TKF92IndelModel, phylo: &PhyloInfo<MASA>) -> f64 {
+        ModelSearchCost::cost(&TKFIndelCostBuilder::new(model.clone(), phylo.clone()).build())
+    }
+
+    #[test]
+    fn estimate_homology_paths_without_param_optimisation() {
+        let model = TKF92IndelModel::default();
+        let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            model.clone(),
+            DEFAULT_EPSILON,
+            Some(10),
+            false,
+            DefaultGenerator::new(42),
+        )
+        .unwrap();
+
+        let result = inf.estimate_homology_paths::<_, MASA>(setup_msa()).unwrap();
+
+        result.phylo.check_dollos_constraint().unwrap();
+        let logl = tkf92_logl(&result.model, &result.phylo);
+        assert!(logl.is_finite());
+        assert_eq!(result.model.params(), model.params());
+    }
+
+    #[test]
+    fn estimate_homology_paths_with_param_optimisation() {
+        let model = TKF92IndelModel::default();
+        let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            model.clone(),
+            DEFAULT_EPSILON,
+            Some(10),
+            true,
+            DefaultGenerator::new(42),
+        )
+        .unwrap();
+
+        let result = inf.estimate_homology_paths::<_, MASA>(setup_msa()).unwrap();
+
+        result.phylo.check_dollos_constraint().unwrap();
+        let logl = tkf92_logl(&result.model, &result.phylo);
+        assert!(logl.is_finite());
+        assert_ne!(result.model.params(), model.params());
+    }
+
+    /// Tree with a very short edge (`I6` to `D3`), such that parsimony places the insertions
+    /// unique to `D3` on that edge, while under TKF it is much more likely to place them on the
+    /// long edge above (`R8` to `I6`) and delete them on the edge to `C2`.
+    fn setup_short_edge_msa() -> PhyloInfo<MSA> {
+        let tree = tree!("((A0:1.0,B1:1.0)I5:1.0,(C2:1.0,D3:1e-10)I6:1.0)R8:1.0;");
+        MSA::from_aligned(
+            Sequences::new(vec![
+                record!("A0", b"AA----"),
+                record!("B1", b"A-----"),
+                record!("C2", b"---A--"),
+                record!("D3", b"--AAAA"),
+            ])
+            .unwrap(),
+            tree,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn estimate_homology_paths_from_initial_improves_logl_and_changes_phylo() {
+        let model = TKF92IndelModel::default();
+        let asr = ParsimonyPresenceAbsence {};
+        let initial = asr
+            .reconstruct_ancestral_seqs(setup_short_edge_msa())
+            .unwrap();
+        let initial_logl = tkf92_logl(&model, &initial);
+
+        let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            model,
+            DEFAULT_EPSILON,
+            Some(10),
+            false,
+            DefaultGenerator::new(42),
+        )
+        .unwrap();
+        let result = inf
+            .estimate_homology_paths_from_initial(initial.clone())
+            .unwrap();
+
+        result.phylo.check_dollos_constraint().unwrap();
+        let final_logl = tkf92_logl(&result.model, &result.phylo);
+        assert!(final_logl > initial_logl);
+        assert_ne!(
+            initial.msa.ancestral_seqs(),
+            result.phylo.msa.ancestral_seqs()
+        );
+    }
+}
