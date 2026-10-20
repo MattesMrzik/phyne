@@ -302,6 +302,42 @@ mod tests {
         assert_ne!(result.model.params(), model.params());
     }
 
+    #[test]
+    fn param_optimisation_improves_likelihood() {
+        let model = TKF92IndelModel::new(&[0.1, 0.2, 0.3]).unwrap();
+
+        let inf_no_opt = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            model.clone(),
+            DEFAULT_EPSILON,
+            Some(10),
+            false,
+            DefaultGenerator::new(42),
+        )
+        .unwrap();
+        let result_no_opt = inf_no_opt
+            .estimate_homology_paths::<_, MASA>(setup_msa())
+            .unwrap();
+        let logl_no_opt = tkf92_logl(&result_no_opt.model, &result_no_opt.phylo);
+
+        let inf_opt = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            model,
+            DEFAULT_EPSILON,
+            Some(10),
+            true,
+            DefaultGenerator::new(42),
+        )
+        .unwrap();
+        let result_opt = inf_opt
+            .estimate_homology_paths::<_, MASA>(setup_msa())
+            .unwrap();
+        let logl_opt = tkf92_logl(&result_opt.model, &result_opt.phylo);
+
+        assert!(logl_no_opt.is_finite());
+        assert!(logl_opt.is_finite());
+        assert_ne!(result_opt.model.params(), result_no_opt.model.params());
+        assert!(logl_opt > logl_no_opt);
+    }
+
     /// Tree with a very short edge (`I6` to `D3`), such that parsimony places the insertions
     /// unique to `D3` on that edge, while under TKF it is much more likely to place them on the
     /// long edge above (`R8` to `I6`) and delete them on the edge to `C2`.
