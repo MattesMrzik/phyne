@@ -296,6 +296,20 @@ mod tests {
     }
 
     #[test]
+    fn default_tkf_indel_inf_reconstructs_ancestral_seqs() {
+        let inf = TKFIndelInf::<TKF92IndelModel>::default();
+
+        let unchecked: PhyloInfo<MASA> = inf.reconstruct_ancestral_seqs_unchecked(setup_msa());
+        let checked: PhyloInfo<MASA> = inf.reconstruct_ancestral_seqs(setup_msa()).unwrap();
+
+        for phylo in [&unchecked, &checked] {
+            assert_eq!(phylo.msa.seqs().len(), 3);
+            assert_eq!(phylo.msa.ancestral_seqs().len(), 2);
+            assert!(tkf92_logl(&TKF92IndelModel::default(), phylo).is_finite());
+        }
+    }
+
+    #[test]
     fn estimate_homology_paths_without_param_optimisation() {
         let model = TKF92IndelModel::default();
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
