@@ -30,6 +30,9 @@ pub enum Error {
     #[error("Tree error: {0}")]
     Tree(String),
 
+    #[error("Tkf model error: {0}")]
+    Tkf(String),
+
     #[error("Tree move error: {0}")]
     TreeMove(String),
 

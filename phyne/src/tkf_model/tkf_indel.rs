@@ -23,7 +23,6 @@ lazy_static! {
 
 pub(super) static DEFAULT_LAMBDA: f64 = 1.0;
 pub(super) static DEFAULT_MU: f64 = 1.1;
-pub(super) static DEFAULT_LAMBDA_MU_RATIO: f64 = 0.9;
 pub(super) static DEFAULT_R: f64 = 0.5;
 
 /// For the function [u]: only if the time is shorter than this threshold, we use the Taylor approximation.
@@ -45,7 +44,7 @@ pub(super) enum Event {
 /// Trait for TKF indel models (i.e., [TKF91IndelModel](`crate::tkf_model::TKF91IndelModel`),
 /// [TKF92IndelModel](`crate::tkf_model::TKF92IndelModel`)).
 #[allow(clippy::upper_case_acronyms)]
-pub trait TKFModel: Clone + Display {
+pub trait TKFModel: Clone + Display + Default {
     // TODO: it might be better for model optimisation to have parameter lambda and scale s = mu/lambda,
     // because of the constraint that mu > lambda.
     // See issue #152 https://github.com/acg-team/phyne/issues/152
@@ -395,6 +394,55 @@ impl<T: TKFModel, AA: AncestralAlignment> TKFIndelCost<T, AA> {
     }
 }
 
+/// Builder for [`TKFIndelCost`], i.e., the TKF indel cost of an
+/// [ancestral alignment](`AncestralAlignment`) and a [tree](`crate::tree::Tree`)
+/// under a [`TKFModel`], without a substitution model.
+///
+/// # Example
+/// ```rust
+/// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
+/// use phyne::likelihood::ModelSearchCost;
+/// use phyne::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder};
+/// use phyne::{record_wo_desc as record, tree};
+///
+/// # use phyne::Result;
+/// # fn main() -> Result<()> {
+/// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
+/// let phylo = MASA::from_aligned_with_ancestral(
+///     Sequences::new(vec![
+///         record!("A1", b"--GTGGA---"),
+///         record!("B2", b"-------NNA"),
+///         record!("I3", b"--T-------"),
+///         record!("C4", b"AGG-------"),
+///         record!("R5", b"--A-------"),
+///     ])?,
+///     tree,
+/// )?;
+/// let indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
+/// let cost = TKFIndelCostBuilder::new(indel_model, phylo).build();
+/// assert!(cost.cost().is_finite());
+/// # Ok(()) }
+/// ```
+pub struct TKFIndelCostBuilder<T: TKFModel, AA: AncestralAlignment> {
+    model: T,
+    phylo: PhyloInfo<AA>,
+}
+
+impl<T: TKFModel, AA: AncestralAlignment> TKFIndelCostBuilder<T, AA> {
+    pub fn new(model: T, phylo: PhyloInfo<AA>) -> Self {
+        Self { model, phylo }
+    }
+
+    pub fn build(self) -> TKFIndelCost<T, AA> {
+        let info = TKFIndelModelInfo::new(&self.model, &self.phylo);
+        TKFIndelCost {
+            model: self.model,
+            phylo: self.phylo,
+            model_info: RefCell::new(info),
+        }
+    }
+}
+
 impl<T: TKFModel, AA: AncestralAlignment> ModelSearchCost for TKFIndelCost<T, AA> {
     fn cost(&self) -> f64 {
         self.logl()
@@ -605,52 +653,4 @@ pub(super) fn get_block_lengths(blocks: &[usize]) -> Vec<usize> {
         };
     }
     block_lens
-}
-
-#[cfg(test)]
-#[cfg_attr(coverage, coverage(off))]
-mod private_tests {
-
-    use super::*;
-    use crate::alphabets::Alphabet;
-    use crate::tkf_model::tests::setup_test_phylo;
-    use crate::tkf_model::TKF91IndelCostBuilder;
-    use crate::tkf_model::TKF92IndelCostBuilder;
-    use crate::tkf_model::TKFModel;
-
-    #[cfg(test)]
-    fn validate_lambda_mu(l: f64, m: f64, l_expected: f64, m_expected: f64) {
-        let cost = TKF91IndelCostBuilder::new(&[l, m], setup_test_phylo(Alphabet::dna()))
-            .build()
-            .unwrap();
-        assert_eq!(cost.model.lambda(), l_expected);
-        assert_eq!(cost.model.mu(), m_expected);
-        let cost = TKF92IndelCostBuilder::new(&[l, m, 0.1], setup_test_phylo(Alphabet::dna()))
-            .build()
-            .unwrap();
-        assert_eq!(cost.model.lambda(), l_expected);
-        assert_eq!(cost.model.mu(), m_expected);
-    }
-
-    #[cfg(test)]
-    fn validate_r(r: f64, r_expected: f64) {
-        let cost = TKF92IndelCostBuilder::new(&[1.0, 2.0, r], setup_test_phylo(Alphabet::dna()))
-            .build()
-            .unwrap();
-        assert_eq!(cost.model.r(), r_expected);
-    }
-
-    #[test]
-    fn tkf_validate_params_for_builder() {
-        validate_lambda_mu(-1.0, -2.0, DEFAULT_LAMBDA, DEFAULT_MU);
-        validate_lambda_mu(0.0, 2.0, DEFAULT_LAMBDA_MU_RATIO * 2.0, 2.0);
-        validate_lambda_mu(2.0, -0.1, 2.0, 2.0 / DEFAULT_LAMBDA_MU_RATIO);
-        validate_lambda_mu(2.0, 1.9999, 2.0, 2.0 / DEFAULT_LAMBDA_MU_RATIO);
-        validate_lambda_mu(1.2, 1.21, 1.2, 1.21);
-        validate_r(-0.5, DEFAULT_R);
-        validate_r(0.0, DEFAULT_R);
-        validate_r(1.0, DEFAULT_R);
-        validate_r(1.5, DEFAULT_R);
-        validate_r(0.1, 0.1);
-    }
 }

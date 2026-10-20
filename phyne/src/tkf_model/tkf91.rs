@@ -1,21 +1,17 @@
-use std::cell::RefCell;
 use std::fmt::Display;
 
-use log::warn;
+use itertools::any;
 use num_enum::{FromPrimitive, IntoPrimitive};
 use rand::{Rng, SeedableRng};
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::ParamRange;
-use crate::phylo_info::PhyloInfo;
 use crate::random::RandomGenerator;
-use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCostBuilder as SCB};
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
-use crate::tkf_model::{
-    TKFCost, TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_LAMBDA_MU_RATIO,
-    DEFAULT_MU,
-};
-use crate::Result;
+use crate::tkf_model::{TKFModel, DEFAULT_LAMBDA, DEFAULT_MU};
+use crate::{bail, Result};
+
+pub const TKF91_PARAM_COUNT: usize = 2;
 
 #[derive(Debug, Eq, PartialEq, FromPrimitive, IntoPrimitive)]
 #[repr(usize)]
@@ -32,10 +28,40 @@ pub struct TKF91IndelModel {
 }
 
 impl TKF91IndelModel {
-    pub fn new(lambda: f64, mu: f64) -> Self {
-        let mut params = vec![lambda, mu];
-        validate_lambda_mu(&mut params);
-        Self { params }
+    /// Creates a new TKF91 model given parameters: lambda, mu.
+    /// Validates the parameters and returns an error if they are invalid:
+    /// 0 < lambda < mu < infinity.
+    pub fn new(params: &[f64]) -> Result<Self> {
+        if params.len() != TKF91_PARAM_COUNT {
+            bail!(
+                Tkf,
+                "Expected {} parameters for TKF91 model (lambda, mu), but got {}",
+                TKF91_PARAM_COUNT,
+                params.len()
+            );
+        }
+
+        if any(params, |&p| p.is_nan() || p.is_infinite() || p <= 0.0) {
+            bail!(
+                Tkf,
+                "All parameters for TKF91 model must be positive non-nan and not infinite, but got {:?}",
+                params
+            );
+        }
+
+        if params[usize::from(TKF91Parameters::Lambda)] >= params[usize::from(TKF91Parameters::Mu)]
+        {
+            bail!(
+                Tkf,
+                "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
+                params[usize::from(TKF91Parameters::Lambda)],
+                params[usize::from(TKF91Parameters::Mu)]
+            );
+        }
+
+        Ok(Self {
+            params: params.to_vec(),
+        })
     }
 }
 
@@ -120,108 +146,56 @@ impl ExpectedRootLength for TKF91IndelModel {
     }
 }
 
-/// Validates the TKF indel parameters lambda and mu. If they are not valid, they are set to
-/// default values and a warning is logged.
-/// Returns valid (lambda, mu).
-pub(super) fn validate_lambda_mu(params: &mut [f64]) {
-    let lambda_id = usize::from(TKF91Parameters::Lambda);
-    let mu_id = usize::from(TKF91Parameters::Mu);
-    let lambda = params[lambda_id];
-    let mu = params[mu_id];
-
-    if lambda <= 0.0 && mu <= 0.0 {
-        warn!(
-            "Both lambda and mu must be positive. Setting lambda to {DEFAULT_LAMBDA} and mu to {DEFAULT_MU}."
-        );
-        params[lambda_id] = DEFAULT_LAMBDA;
-        params[mu_id] = DEFAULT_MU;
-    } else if lambda <= 0.0 {
-        params[lambda_id] = DEFAULT_LAMBDA_MU_RATIO * mu;
-        warn!(
-            "Tried to set lambda to invalid value {lambda}. \
-            It must be in (0, mu) with mu = {mu}. \
-            Setting lambda to {DEFAULT_LAMBDA_MU_RATIO}*mu = {}",
-            params[lambda_id]
-        );
-    } else if mu <= lambda {
-        params[mu_id] = lambda / DEFAULT_LAMBDA_MU_RATIO;
-        warn!(
-            "Tried to set mu to invalid value {mu}. \
-            It must be in (lambda, infinity) with lambda = {lambda}. \
-            Setting mu to lambda/{DEFAULT_LAMBDA_MU_RATIO} = {}",
-            params[mu_id]
-        );
-    }
-}
-
-/// Builder for the cost using the [`TKF91IndelModel`], i.e., without a substitution model.
-pub struct TKF91IndelCostBuilder<AA: AncestralAlignment> {
-    params: Vec<f64>,
-    phylo: PhyloInfo<AA>,
-}
-
-impl<AA: AncestralAlignment> TKF91IndelCostBuilder<AA> {
-    pub fn new(params: &[f64], phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            phylo,
-        }
-    }
-
-    pub fn build(self) -> Result<TKFIndelCost<TKF91IndelModel, AA>> {
-        let mut params = self.params;
-        if params.len() != 2 {
-            warn!(
-                "Expected 2 parameters for TKF91 model (lambda, mu), but got {}",
-                params.len()
-            );
-            warn!("Falling back to default values");
-            params.resize(2, 0.0);
-            params[usize::from(TKF91Parameters::Lambda)] = DEFAULT_LAMBDA;
-            params[usize::from(TKF91Parameters::Mu)] = DEFAULT_MU;
-        }
-        validate_lambda_mu(&mut params);
-        let model = TKF91IndelModel { params };
-        let info = TKFIndelModelInfo::new(&model, &self.phylo);
-        Ok(TKFIndelCost {
-            model,
-            phylo: self.phylo,
-            model_info: RefCell::new(info),
-        })
-    }
-}
-
-/// Builder for the TKF91 cost, i.e., with a substitution model.
-pub struct TKF91CostBuilder<Q: QMatrix, AA: AncestralAlignment> {
-    params: Vec<f64>,
-    subst_model: SubstModel<Q>,
-    phylo: PhyloInfo<AA>,
-}
-
-impl<Q: QMatrix, AA: AncestralAlignment> TKF91CostBuilder<Q, AA> {
-    pub fn new(params: &[f64], subst_model: SubstModel<Q>, phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            subst_model,
-            phylo,
-        }
-    }
-
-    pub fn build(self) -> Result<TKFCost<Q, TKF91IndelModel, AA>> {
-        let indel_cost = TKF91IndelCostBuilder::new(&self.params, self.phylo.clone()).build()?;
-        let subst_cost = SCB::new(self.subst_model, self.phylo.clone()).build()?;
-        Ok(TKFCost {
-            indel_cost,
-            subst_cost,
-        })
-    }
-}
-
 #[cfg(test)]
 mod private_tests {
-    use approx::assert_relative_eq;
-
     use super::*;
+    use crate::Error;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    #[test]
+    fn tkf91_indel_model_new_success() {
+        let model = TKF91IndelModel::new(&[0.5, 1.0]).unwrap();
+        assert_eq!(model.lambda(), 0.5);
+        assert_eq!(model.mu(), 1.0);
+        assert_eq!(model.params(), &[0.5, 1.0]);
+    }
+
+    #[rstest]
+    #[case::too_few(&[0.5])]
+    #[case::too_many(&[0.5, 1.0, 2.0])]
+    fn tkf91_indel_model_new_wrong_param_count(#[case] params: &[f64]) {
+        let err = TKF91IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("Expected 2 parameters for TKF91 model")
+        );
+    }
+
+    #[rstest]
+    #[case::zero_lambda(&[0.0, 1.0])]
+    #[case::zero_mu(&[0.5, 0.0])]
+    #[case::negative_lambda(&[-0.5, 1.0])]
+    #[case::nan_lambda(&[f64::NAN, 1.0])]
+    #[case::infinite_mu(&[0.5, f64::INFINITY])]
+    fn tkf91_indel_model_new_non_positive_or_non_finite(#[case] params: &[f64]) {
+        let err = TKF91IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("must be positive non-nan and not infinite")
+        );
+    }
+
+    #[rstest]
+    #[case::lambda_eq_mu(&[1.0, 1.0])]
+    #[case::lambda_gt_mu(&[2.0, 1.0])]
+    fn tkf91_indel_model_new_lambda_ge_mu(#[case] params: &[f64]) {
+        let err = TKF91IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("Parameter lambda must be less than mu")
+        );
+    }
 
     #[test]
     #[should_panic]
@@ -255,12 +229,5 @@ mod private_tests {
         let new_mu = 2.1;
         model.set_param(usize::from(TKF91Parameters::Mu), new_mu);
         assert_eq!(model.mu(), new_mu);
-    }
-
-    #[test]
-    fn tkf91_expected_root_length() {
-        let model = TKF91IndelModel::new(1.1, 2.0);
-        let ratio = model.lambda() / model.mu();
-        assert_relative_eq!(model.expected_root_length(), ratio / (1.0 - ratio));
     }
 }

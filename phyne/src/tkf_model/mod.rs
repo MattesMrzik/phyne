@@ -3,9 +3,10 @@ use std::fmt::Display;
 use crate::alignment::AncestralAlignment;
 use crate::evolutionary_models::FreqVector;
 use crate::likelihood::{ModelSearchCost, ParamRange, TreeSearchCost};
-use crate::substitution_models::{QMatrix, SubstitutionCost};
+use crate::phylo_info::PhyloInfo;
+use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCost, SubstitutionCostBuilder};
 use crate::tree::Tree;
-use crate::Result;
+use crate::{bail, Result};
 
 pub mod tkf91;
 pub use tkf91::*;
@@ -17,6 +18,8 @@ pub mod tkf_indel;
 pub use tkf_indel::*;
 pub mod simulate_msa;
 pub use simulate_msa::*;
+pub mod indel_inf;
+pub use indel_inf::*;
 
 #[derive(Clone, Debug)]
 pub struct TKFCost<Q: QMatrix + Display, T: TKFModel, AA: AncestralAlignment> {
@@ -111,26 +114,25 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     /// ```rust
     /// use phyne::substitution_models::{SubstModel, dna_models::GTR};
     /// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
-    /// use phyne::tkf_model::TKF92CostBuilder;
+    /// use phyne::tkf_model::{TKF92IndelModel, TKFCostBuilder};
     /// use phyne::{tree, record_wo_desc as record};
     ///
     /// # use phyne::Result;
     /// # fn main() -> Result<()> {
     /// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
     /// let phylo = MASA::from_aligned_with_ancestral(
-    ///     Sequences::new(
-    ///         vec![
-    ///             record!("A1", b"--GTGGA---"),
-    ///             record!("B2", b"-------NNA"),
-    ///             record!("I3", b"--T-------"),
-    ///             record!("C4", b"AGG-------"),
-    ///             record!("R5", b"--A-------"),
-    ///            ],
-    ///     )?,
-    ///   tree,
+    ///     Sequences::new(vec![
+    ///         record!("A1", b"--GTGGA---"),
+    ///         record!("B2", b"-------NNA"),
+    ///         record!("I3", b"--T-------"),
+    ///         record!("C4", b"AGG-------"),
+    ///         record!("R5", b"--A-------"),
+    ///     ])?,
+    ///     tree,
     /// )?;
     /// let subst_model = SubstModel::<GTR>::default();
-    /// let cost = TKF92CostBuilder::new(&[0.4, 0.5, 0.8], subst_model, phylo).build()?;
+    /// let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
+    /// let cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo).build()?;
     /// assert_eq!(cost.masa().seqs().len(), 3);
     /// assert_eq!(cost.masa().ancestral_seqs().len(), 2);
     /// # Ok(()) }
@@ -144,26 +146,25 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     /// ```rust
     /// use phyne::substitution_models::{SubstModel, dna_models::GTR};
     /// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
-    /// use phyne::tkf_model::TKF92CostBuilder;
+    /// use phyne::tkf_model::{TKFCostBuilder, TKF92IndelModel};
     /// use phyne::{tree, record_wo_desc as record};
     ///
     /// # use phyne::Result;
     /// # fn main() -> Result<()> {
     /// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
     /// let phylo = MASA::from_aligned_with_ancestral(
-    ///     Sequences::new(
-    ///         vec![
-    ///             record!("A1", b"--GTGGA---"),
-    ///             record!("B2", b"-------NNA"),
-    ///             record!("I3", b"--T-------"),
-    ///             record!("C4", b"AGG-------"),
-    ///             record!("R5", b"--A-------"),
-    ///            ],
-    ///     )?,
-    ///   tree,
+    ///     Sequences::new(vec![
+    ///         record!("A1", b"--GTGGA---"),
+    ///         record!("B2", b"-------NNA"),
+    ///         record!("I3", b"--T-------"),
+    ///         record!("C4", b"AGG-------"),
+    ///         record!("R5", b"--A-------"),
+    ///     ])?,
+    ///     tree,
     /// )?;
     /// let subst_model = SubstModel::<GTR>::default();
-    /// let cost = TKF92CostBuilder::new(&[0.4, 0.5, 0.8], subst_model, phylo).build()?;
+    /// let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
+    /// let cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo).build()?;
     /// // under the TKF92 model the blocks are the positions in the alignment where there is
     /// // a sequence that changes from gap to non-gap or vice versa (always including the last
     /// // position of the alignment).
@@ -171,6 +172,64 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
     /// # Ok(()) }
     pub fn blocks(&self) -> Vec<usize> {
         self.indel_cost.model.get_blocks(&self.indel_cost.phylo.msa)
+    }
+}
+
+/// Builder for [`TKFCost`], i.e., the combined TKF indel and substitution model cost of an
+/// [ancestral alignment](`AncestralAlignment`) and a [tree](`Tree`).
+///
+/// # Example
+/// ```rust
+/// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
+/// use phyne::substitution_models::{dna_models::GTR, SubstModel};
+/// use phyne::tkf_model::{TKF92IndelModel, TKFCostBuilder};
+/// use phyne::{record_wo_desc as record, tree};
+///
+/// # use phyne::Result;
+/// # fn main() -> Result<()> {
+/// let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
+/// let phylo = MASA::from_aligned_with_ancestral(
+///     Sequences::new(vec![
+///         record!("A1", b"--GTGGA---"),
+///         record!("B2", b"-------NNA"),
+///         record!("I3", b"--T-------"),
+///         record!("C4", b"AGG-------"),
+///         record!("R5", b"--A-------"),
+///     ])?,
+///     tree,
+/// )?;
+/// let subst_model = SubstModel::<GTR>::default();
+/// let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
+/// let cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo).build()?;
+/// assert_eq!(cost.masa().seqs().len(), 3);
+/// assert_eq!(cost.masa().ancestral_seqs().len(), 2);
+/// # Ok(()) }
+/// ```
+pub struct TKFCostBuilder<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> {
+    subst_model: SubstModel<Q>,
+    tkf_indel_model: T,
+    phylo: PhyloInfo<AA>,
+}
+
+impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCostBuilder<Q, T, AA> {
+    pub fn new(subst_model: SubstModel<Q>, tkf_indel_model: T, phylo: PhyloInfo<AA>) -> Self {
+        Self {
+            subst_model,
+            tkf_indel_model,
+            phylo,
+        }
+    }
+
+    pub fn build(self) -> Result<TKFCost<Q, T, AA>> {
+        if self.phylo.msa.alphabet() != Q::alphabet() {
+            bail!(Alphabet, "alphabet mismatch between model and alignment");
+        }
+        let indel_cost = TKFIndelCostBuilder::new(self.tkf_indel_model, self.phylo.clone()).build();
+        let subst_cost = SubstitutionCostBuilder::new(self.subst_model, self.phylo).build()?;
+        Ok(TKFCost {
+            indel_cost,
+            subst_cost,
+        })
     }
 }
 

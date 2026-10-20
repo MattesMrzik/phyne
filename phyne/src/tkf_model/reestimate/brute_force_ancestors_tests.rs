@@ -17,8 +17,8 @@ use crate::tkf_model::reestimate::cache::possible_assignments_of_edge;
 use crate::tkf_model::reestimate::mapping_from_node_seq;
 use crate::tkf_model::tests::get_mapping_for_any_node;
 use crate::tkf_model::{
-    EdgeSeqsReestimator, TKF92IndelAddBlocksCostBuilder, TKF92IndelCostBuilder, TKFIndelCost,
-    TKFModel,
+    EdgeSeqsReestimator, TKF92IndelAddBlocksCostBuilder, TKF92IndelModel, TKFIndelCost,
+    TKFIndelCostBuilder, TKFModel,
 };
 use crate::tree::NodeIdx;
 
@@ -427,9 +427,8 @@ fn tkf92_reestimate_large_tree_for_file_iterative() {
     load_precalculated_brute_force_maxes(&precalculated_file, &mut iteration_info);
 
     // the cost to be used for repeated reestimation
-    let mut reestimator_cost = TKF92IndelCostBuilder::new(&[lambda, mu, r], phylo.clone())
-        .build()
-        .unwrap();
+    let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+    let mut reestimator_cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo.clone()).build();
     // cloning here to leave the cost in a clean state before reestimation
     let mut prev_logl = reestimator_cost.clone().cost();
     let mut rng = FakeGenerator::default();

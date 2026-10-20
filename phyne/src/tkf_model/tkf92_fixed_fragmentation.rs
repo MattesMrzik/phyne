@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 
+use itertools::any;
 use log::warn;
 use num_enum::FromPrimitive;
 use rstest::rstest;
@@ -9,10 +10,10 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, validate_lambda_mu, validate_r, TKF92Parameters, TKFIndelCost,
-    TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
+    blocks_of_alignment, TKF92Parameters, TKFIndelCost, TKFIndelModelInfo, TKFModel,
+    DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R, TKF92_PARAM_COUNT,
 };
-use crate::Result;
+use crate::{bail, Result};
 
 /// TKF92 indel model with a `fixed fragmentation` (and without a substitution model),
 /// which means that the provided fragmentation will be regarded as the true fragmentation.
@@ -32,6 +33,50 @@ pub struct TKF92FixedIndelModel {
 impl TKF92FixedIndelModel {
     pub fn r(&self) -> f64 {
         self.params[usize::from(TKF92Parameters::R)]
+    }
+
+    pub fn new(params: &[f64], fragmentation: Vec<usize>) -> Result<Self> {
+        if params.len() != TKF92_PARAM_COUNT {
+            bail!(
+                Tkf,
+                "Expected {} parameters for TKF92 model (lambda, mu, r), but got {}",
+                TKF92_PARAM_COUNT,
+                params.len()
+            );
+        }
+
+        if any(params, |&p| p.is_nan() || p.is_infinite() || p <= 0.0) {
+            bail!(
+                Tkf,
+                "All parameters for TKF92 model must be positive non-nan and not infinite, but got {:?}",
+                params
+            );
+        }
+
+        if params[usize::from(TKF92Parameters::Lambda)] >= params[usize::from(TKF92Parameters::Mu)]
+        {
+            bail!(
+                Tkf,
+                "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
+                params[usize::from(TKF92Parameters::Lambda)],
+                params[usize::from(TKF92Parameters::Mu)]
+            );
+        }
+
+        if params[usize::from(TKF92Parameters::R)] >= 1.0 {
+            bail!(
+                Tkf,
+                "Parameter r must be in (0, 1), but got r = {}",
+                params[usize::from(TKF92Parameters::R)]
+            );
+        }
+
+        let ln_r = params[usize::from(TKF92Parameters::R)].ln();
+        Ok(Self {
+            params: params.to_vec(),
+            ln_r,
+            fragmentation,
+        })
     }
 }
 
@@ -87,6 +132,17 @@ impl TKFModel for TKF92FixedIndelModel {
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
         let alignment_blocks = blocks_of_alignment(msa);
         merge_fragmentation_with_blocks(&self.fragmentation, &alignment_blocks)
+    }
+}
+
+impl Default for TKF92FixedIndelModel {
+    fn default() -> Self {
+        let r = DEFAULT_R;
+        Self {
+            params: vec![DEFAULT_LAMBDA, DEFAULT_MU, r],
+            ln_r: r.ln(),
+            fragmentation: vec![],
+        }
     }
 }
 
@@ -147,8 +203,7 @@ impl Display for TKF92FixedIndelModel {
 /// Builder for the cost using the [`TKF92FixedIndelModel`].
 #[cfg(test)]
 pub struct TKF92FixedIndelCostBuilder<AA: AncestralAlignment> {
-    params: Vec<f64>,
-    fragmentation: Vec<usize>,
+    model: TKF92FixedIndelModel,
     phylo: PhyloInfo<AA>,
 }
 
@@ -177,43 +232,14 @@ pub(super) fn validate_fragmentation(fragmentation: &[usize], msa_len: usize) ->
 
 #[cfg(test)]
 impl<AA: AncestralAlignment> TKF92FixedIndelCostBuilder<AA> {
-    pub fn new(params: &[f64], fragmentation: Vec<usize>, phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            fragmentation,
-            phylo,
-        }
+    pub fn new(model: TKF92FixedIndelModel, phylo: PhyloInfo<AA>) -> Self {
+        Self { model, phylo }
     }
 
     pub fn build(self) -> Result<TKFIndelCost<TKF92FixedIndelModel, AA>> {
-        let mut params = self.params;
-        let lambda_id = usize::from(TKF92Parameters::Lambda);
-        let mu_id = usize::from(TKF92Parameters::Mu);
-        let r_id = usize::from(TKF92Parameters::R);
-        if params.len() != 3 {
-            warn!(
-                "Expected 3 parameters for TKF92 model (lambda, mu, r), but got {}",
-                params.len()
-            );
-            warn!("Falling back to default values");
-            params.resize(3, 0.0);
-            params[lambda_id] = DEFAULT_LAMBDA;
-            params[mu_id] = DEFAULT_MU;
-            params[r_id] = DEFAULT_R;
-        } else {
-            validate_lambda_mu(&mut params);
-            validate_r(&mut params);
-        }
-        let fragmentation = validate_fragmentation(&self.fragmentation, self.phylo.msa.len());
-        let r = params[r_id];
-        let model = TKF92FixedIndelModel {
-            params,
-            ln_r: r.ln(),
-            fragmentation,
-        };
-        let info = TKFIndelModelInfo::new(&model, &self.phylo);
+        let info = TKFIndelModelInfo::new(&self.model, &self.phylo);
         Ok(TKFIndelCost {
-            model,
+            model: self.model,
             phylo: self.phylo.clone(),
             model_info: RefCell::new(info),
         })
@@ -229,7 +255,7 @@ mod private_tests {
 
     use crate::alignment::{Sequences, MASA};
     use crate::phylo_info::PhyloInfoBuilder;
-    use crate::tkf_model::TKF92IndelCostBuilder;
+    use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder};
     use crate::{record_wo_desc as record, tree};
 
     use super::*;
@@ -280,9 +306,8 @@ mod private_tests {
         let mu = 1.1;
         let r = 0.5;
 
-        let tkf92_cost = TKF92IndelCostBuilder::new(&[lambda, mu, r], phylo_info.clone())
-            .build()
-            .unwrap();
+        let tkf_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+        let tkf92_cost = TKFIndelCostBuilder::new(tkf_model, phylo_info.clone()).build();
         let cost = tkf92_cost.logl();
 
         let mut sum_over_fragmentations_cost = 0.0;
@@ -298,13 +323,12 @@ mod private_tests {
         ];
 
         for fragmentation in fragmentations {
-            let fragment_cost = TKF92FixedIndelCostBuilder::new(
-                &[lambda, mu, r],
-                fragmentation,
-                phylo_info.clone(),
-            )
-            .build()
-            .unwrap();
+            let fixed_frag_model =
+                TKF92FixedIndelModel::new(&[lambda, mu, r], fragmentation.clone()).unwrap();
+            let fragment_cost =
+                TKF92FixedIndelCostBuilder::new(fixed_frag_model, phylo_info.clone())
+                    .build()
+                    .unwrap();
             sum_over_fragmentations_cost += fragment_cost.logl().exp();
         }
         sum_over_fragmentations_cost = sum_over_fragmentations_cost.ln();
@@ -326,9 +350,8 @@ mod private_tests {
         let mu = 1.1;
         let r = 0.5;
 
-        let tkf92_cost = TKF92IndelCostBuilder::new(&[lambda, mu, r], phylo_info.clone())
-            .build()
-            .unwrap();
+        let tkf_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+        let tkf92_cost = TKFIndelCostBuilder::new(tkf_model, phylo_info.clone()).build();
         let cost = tkf92_cost.logl();
 
         let mut sum_over_fragmentations_cost = 0.0;
@@ -347,13 +370,12 @@ mod private_tests {
         ];
 
         for fragmentation in fragmentations {
-            let fragment_cost = TKF92FixedIndelCostBuilder::new(
-                &[lambda, mu, r],
-                fragmentation,
-                phylo_info.clone(),
-            )
-            .build()
-            .unwrap();
+            let fixed_frag_model =
+                TKF92FixedIndelModel::new(&[lambda, mu, r], fragmentation.clone()).unwrap();
+            let fragment_cost =
+                TKF92FixedIndelCostBuilder::new(fixed_frag_model, phylo_info.clone())
+                    .build()
+                    .unwrap();
             sum_over_fragmentations_cost += fragment_cost.logl().exp();
         }
         sum_over_fragmentations_cost = sum_over_fragmentations_cost.ln();
@@ -417,10 +439,11 @@ mod private_tests {
             354, 355, 356, 359, 360, 363, 365, 369, 372, 374, 376,
         ];
         // parameters from simulation
-        let fragment_cost =
-            TKF92FixedIndelCostBuilder::new(&[1.0, 1.1, 0.5], fragmentation, phylo_info)
-                .build()
-                .unwrap();
+        let fixed_model =
+            TKF92FixedIndelModel::new(&[1.0, 1.1, 0.5], fragmentation.clone()).unwrap();
+        let fragment_cost = TKF92FixedIndelCostBuilder::new(fixed_model,  phylo_info)
+            .build()
+            .unwrap();
         // logl from simulation
         assert_relative_eq!(fragment_cost.logl(), -769.4115065236674, epsilon = 1e-10);
     }
