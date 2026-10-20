@@ -229,9 +229,7 @@ mod private_tests {
     use crate::alignment::AncestralAlignment;
     use crate::alphabets::Alphabet;
     use crate::random::FakeGenerator;
-    use crate::tkf_model::{
-        tests::setup_test_phylo, EdgeSeqsReestimator,  TKFModel,
-    };
+    use crate::tkf_model::{tests::setup_test_phylo, EdgeSeqsReestimator, TKFModel};
     use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder};
 
     use super::*;

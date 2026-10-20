@@ -441,7 +441,7 @@ mod private_tests {
         // parameters from simulation
         let fixed_model =
             TKF92FixedIndelModel::new(&[1.0, 1.1, 0.5], fragmentation.clone()).unwrap();
-        let fragment_cost = TKF92FixedIndelCostBuilder::new(fixed_model,  phylo_info)
+        let fragment_cost = TKF92FixedIndelCostBuilder::new(fixed_model, phylo_info)
             .build()
             .unwrap();
         // logl from simulation

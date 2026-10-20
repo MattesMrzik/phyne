@@ -61,7 +61,7 @@ fn tkf_reestimation_fails_for_root() {
 #[test]
 fn tkf_reestimation_fails_for_leaf() {
     let phylo = setup_test_phylo(Alphabet::dna());
-let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8]).unwrap();
+    let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8]).unwrap();
     let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
     let rng = &mut FakeGenerator::default();
     let mut reestimator = EdgeSeqsReestimator::new(&mut cost, rng);

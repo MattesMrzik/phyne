@@ -786,9 +786,10 @@ fn tkf92_cost_builder_fails() {
 #[test]
 fn tkf92_fixed_build_default() {
     let fixed_model = TKF92FixedIndelModel::default();
-    let tkf_indel_cost = TKF92FixedIndelCostBuilder::new(fixed_model, setup_test_phylo(Alphabet::dna()))
-        .build()
-        .unwrap();
+    let tkf_indel_cost =
+        TKF92FixedIndelCostBuilder::new(fixed_model, setup_test_phylo(Alphabet::dna()))
+            .build()
+            .unwrap();
     assert_eq!(tkf_indel_cost.model.lambda(), DEFAULT_LAMBDA);
     assert_eq!(tkf_indel_cost.model.mu(), DEFAULT_MU);
     assert_eq!(tkf_indel_cost.model.r(), DEFAULT_R);
