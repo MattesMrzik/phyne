@@ -253,7 +253,7 @@ mod private_tests {
     #[rstest]
     #[case(vec![3, 2, 5])]
     #[case(vec![3, 3, 5])]
-    #[should_panic(expected = "Fragmentation is not strictly increasing")]
+    #[should_panic(expected = "fragmentation is not strictly increasing")]
     fn fragmentation_init_invalid(#[case] frag: Vec<usize>) {
         Fragmentation::new(frag);
     }
