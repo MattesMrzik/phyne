@@ -306,7 +306,7 @@ mod tests {
     /// unique to `D3` on that edge, while under TKF it is much more likely to place them on the
     /// long edge above (`R8` to `I6`) and delete them on the edge to `C2`.
     fn setup_short_edge_msa() -> PhyloInfo<MSA> {
-        let tree = tree!("((A0:1.0,B1:1.0)I5:1.0,(C2:1.0,D3:1e-10)I6:1.0)R8:1.0;");
+        let tree = tree!("((A0:1.0,B1:1.0)I5:1.0,(C2:1.0,D3:0.01)I6:1.0)R8:1.0;");
         MSA::from_aligned(
             Sequences::new(vec![
                 record!("A0", b"AA----"),
