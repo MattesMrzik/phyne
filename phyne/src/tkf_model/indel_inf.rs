@@ -123,30 +123,42 @@ where
     AA: AncestralAlignment,
 {
     fn reconstruct_ancestral_seqs_unchecked(&self, phylo: PhyloInfo<A>) -> PhyloInfo<AA> {
-        self.estimate_homology_path(phylo).unwrap().0
+        self.estimate_homology_paths(phylo).unwrap().phylo
     }
 
     fn reconstruct_ancestral_seqs(&self, mut phylo: PhyloInfo<A>) -> Result<PhyloInfo<AA>> {
         set_missing_tree_node_ids(&mut phylo.tree)?;
-        let result = self.estimate_homology_path(phylo)?;
-        Ok(result.0)
+        let result = self.estimate_homology_paths(phylo)?;
+        Ok(result.phylo)
     }
 }
 
+/// Result of the [`TKFIndelInf::estimate_homology_paths`] and [`TKFIndelInf::estimate_homology_paths_from_initial`] methods.
+/// It contains the [`PhyloInfo`] with the inferred homology paths, and the [`TKFModel`] that was
+/// used and optionally optimised during the inference process.
+pub struct TKFIndelInfResult<T, AA>
+where
+    T: TKFModel,
+    AA: AncestralAlignment,
+{
+    pub phylo: PhyloInfo<AA>,
+    pub model: T,
+}
+
 impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
-    pub fn estimate_homology_path<A: Alignment, AA: AncestralAlignment>(
+    pub fn estimate_homology_paths<A: Alignment, AA: AncestralAlignment>(
         &self,
         phylo: PhyloInfo<A>,
-    ) -> Result<(PhyloInfo<AA>, T)> {
+    ) -> Result<TKFIndelInfResult<T, AA>> {
         let asr = ParsimonyPresenceAbsence {};
-        let initial_indel_points = asr.reconstruct_ancestral_seqs_unchecked(phylo);
-        self.estimate_homology_path_from_initial(initial_indel_points)
+        let initial_indel_points = asr.reconstruct_ancestral_seqs(phylo)?;
+        self.estimate_homology_paths_from_initial(initial_indel_points)
     }
 
-    pub fn estimate_homology_path_from_initial<AA: AncestralAlignment>(
+    pub fn estimate_homology_paths_from_initial<AA: AncestralAlignment>(
         &self,
         phylo: PhyloInfo<AA>,
-    ) -> Result<(PhyloInfo<AA>, T)> {
+    ) -> Result<TKFIndelInfResult<T, AA>> {
         let max_iters = NonZeroUsize::new(self.max_iterations.unwrap_or(usize::MAX)).unwrap();
         let stop_condition = StopCondition::max_iter_epsilon(max_iters, self.epsilon);
         let intermediate_stop_condition = StopCondition::epsilon(self.epsilon);
@@ -168,7 +180,10 @@ impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
             delta = curr_cost - prev_cost;
         }
 
-        Ok((cost.phylo, cost.model))
+        Ok(TKFIndelInfResult {
+            phylo: cost.phylo,
+            model: cost.model,
+        })
     }
 
     /// Optimises the model parameters of the given cost.
