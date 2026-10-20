@@ -18,39 +18,43 @@ use crate::tree::NodeIdx;
 use crate::{bail, Result, DEFAULT_EPSILON};
 
 /// Infers the homology path (the indel points, i.e. the presence/absence of characters)
-/// at the ancestral nodes of a [tree](`Tree`) under a [TKF](`TKFModel`) indel model.
+/// at the ancestral nodes of a [tree](`crate::tree::Tree`) under a [TKF](`TKFModel`) indel model.
 ///
 /// Starting from an initial guess of the indel points, it iteratively re-estimates the
 /// ancestral gap/non-gap pattern (see [`EdgeSeqsReestimator`]) until convergence and,
-/// optionally, optimises the indel model parameters. The result is an
-/// [ancestral alignment](`AncestralAlignment`) whose ancestral characters are wild cards
+/// optionally, optimises the indel model parameters. The result is a [`PhyloInfo`] whose
+/// [ancestral alignment](`AncestralAlignment`) has ancestral characters that are wild cards
 /// ([`AMB_CHAR`](`crate::alphabets::AMB_CHAR`)), encoding the homology path.
 ///
 /// # Example
 /// ```rust
-/// use phylo::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
-/// use phylo::tkf_model::{TKF92IndelModel, TKFIndelInf};
-/// use phylo::{record_wo_desc as record, tree};
+/// use phyne::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
+/// use phyne::phylo_info::PhyloInfo;
+/// use phyne::tkf_model::{TKF92IndelModel, TKFIndelInf};
+/// use phyne::{record_wo_desc as record, tree};
 ///
-/// # use phylo::Result;
+/// # use phyne::Result;
 /// # fn main() -> Result<()> {
 /// let tree = tree!("((A:1.0,B:1.0)I:1.0,C:1.0)R;");
-/// let msa = MSA::from_aligned(
+/// let phylo = MSA::from_aligned(
 ///     Sequences::new(vec![
 ///         record!("A", b"ACGT"),
 ///         record!("B", b"ACGT"),
 ///         record!("C", b"ACGT"),
 ///     ])?,
-///     &tree,
+///     tree,
 /// )?;
-/// let inf = TKFIndelInf::<TKF92IndelModel, _>::default();
-/// let (ancestral_alignment, _model): (MASA, TKF92IndelModel) =
-///     inf.estimate_homology_path(&msa, tree)?;
-/// assert_eq!(ancestral_alignment.seqs().len(), 3);
-/// assert_eq!(ancestral_alignment.ancestral_seqs().len(), 2);
+/// let inf = TKFIndelInf::<TKF92IndelModel>::default();
+/// let (ancestral_phylo, _model) = inf.estimate_homology_path::<_, MASA>(phylo)?;
+/// assert_eq!(ancestral_phylo.msa.seqs().len(), 3);
+/// assert_eq!(ancestral_phylo.msa.ancestral_seqs().len(), 2);
 /// # Ok(()) }
 /// ```
-pub struct TKFIndelInf<T: TKFModel, R: Rng + SeedableRng + RngCore> {
+pub struct TKFIndelInf<T, R = Pcg32>
+where
+    T: TKFModel,
+    R: Rng + SeedableRng + RngCore,
+{
     epsilon: f64,
     max_iterations: Option<usize>,
     param_opt: bool,
@@ -71,7 +75,11 @@ impl<T: TKFModel> Default for TKFIndelInf<T, Pcg32> {
     }
 }
 
-impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
+impl<T, R> TKFIndelInf<T, R>
+where
+    T: TKFModel,
+    R: Rng + SeedableRng + RngCore,
+{
     // TODO: what other ctors do we want?, perhaps some with default model but passing the other params
     pub fn new_with_attr(
         indel_model: T,
