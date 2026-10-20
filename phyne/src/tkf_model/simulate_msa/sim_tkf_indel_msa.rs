@@ -143,7 +143,7 @@ impl ImmortalLink {
 /// link on a branch and the child node of the branch.
 struct MortalBranch {
     child_node: NodeIdx,
-    survies: Option<MortalLink>,
+    survives: Option<MortalLink>,
     insertions: Vec<MortalLink>,
 }
 
@@ -405,8 +405,7 @@ where
     }
 
     /// First [builds the root links](`Self::build_root_links`)) and then
-    /// [evolves them down the tree](`Self::evolve_link_down_tree`) to produce the full link
-    /// structure of the MSA.
+    /// evolves them down the tree to produce the full link structure of the MSA.
     fn build_msa_links<R: Rng + SeedableRng>(&self, rng: &mut RandomGenerator<R>) -> LinkChain {
         let mut root_links = self.build_root_links(rng);
         self.evolve_immortal(&mut root_links.immortal, rng);
@@ -456,7 +455,7 @@ where
                     // link is deleted, inserting 'dead end' branch
                     link.offspring.push(MortalBranch {
                         child_node: *child_node,
-                        survies: None,
+                        survives: None,
                         insertions: Vec::new(),
                     });
                 }
@@ -468,17 +467,17 @@ where
                     let insertions = self.evolve_insertions(num_children, child_node, rng);
                     link.offspring.push(MortalBranch {
                         child_node: *child_node,
-                        survies: Some(child_link),
+                        survives: Some(child_link),
                         insertions,
                     });
                 }
                 MortalLinkFate::NonHomolog(num_children) => {
-                    // original link is deleted, do not evolve_link_down_tree
+                    // original link is deleted
                     // new insertions
                     let insertions = self.evolve_insertions(num_children, child_node, rng);
                     link.offspring.push(MortalBranch {
                         child_node: *child_node,
-                        survies: None,
+                        survives: None,
                         insertions,
                     });
                 }
@@ -619,7 +618,7 @@ where
         &self,
         links: LinkChain,
     ) -> (PhyloInfo<AA>, Fragmentation) {
-        let mut msa: Seqs = HashMap::new();
+        let mut msa: Seqs = HashMap::with_capacity(self.tree.len());
         // making sure that every node in the tree has a sequence in the MSA, so that we can
         // safely call unwrap() on getters
         for node in self.tree.preorder() {
@@ -638,7 +637,7 @@ where
 
         let seqs = Sequences::new(records).unwrap_or_else(|e| {
             bug!(
-                "Sequences should be valid since they were built from the links",
+                "sequences should be valid since they were built from the links",
                 e
             )
         });
@@ -729,7 +728,7 @@ where
         tree_stack: &mut VecDeque<&'a MortalLink>,
         insertions: &mut VecDeque<&'a MortalLink>,
     ) {
-        match branch.survies {
+        match branch.survives {
             Some(ref child_link) => {
                 tree_stack.push_back(child_link);
                 for l in &branch.insertions {

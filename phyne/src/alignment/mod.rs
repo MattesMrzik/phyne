@@ -731,7 +731,7 @@ impl AncestralAlignment for MASA {
                 Internal(_) => self.ancestral_seqs.update_record(node_id, new_record),
                 Leaf(_) => self.leaf_seqs.update_record(node_id, new_record),
             }
-            .unwrap_or_else(|e| bug!("Updating record failed", e));
+            .unwrap_or_else(|e| bug!("updating record failed", e));
         }
     }
 }
@@ -770,7 +770,7 @@ impl MASA {
         // record exists in the ancestral_seqs, unless we have a bug in our code
         self.ancestral_seqs
             .update_record(id, new_record)
-            .unwrap_or_else(|e| bug!("Updating ancestral record failed", e));
+            .unwrap_or_else(|e| bug!("udating ancestral record failed", e));
     }
 }
 

@@ -52,7 +52,7 @@ impl Fragmentation {
     fn is_increasing(fragments: &[usize]) {
         if !fragments.windows(2).all(|w| w[0] < w[1]) {
             bug!(format!(
-                "Fragmentation is not strictly increasing, got {fragments:?}"
+                "fragmentation is not strictly increasing, got {fragments:?}"
             ));
         }
     }
@@ -154,7 +154,7 @@ impl Fragmentation {
         &self,
         masa: &AA,
     ) {
-        let incompatible_msg = "Fragmentation and alignment are incompatible:";
+        let incompatible_msg = "fragmentation and alignment are incompatible:";
         if self.is_empty() {
             if masa.len() == 0 {
                 return;
@@ -194,7 +194,7 @@ impl Fragmentation {
     /// The mask is a [`FixedBitSet`] over the original alignment columns, where a set bit indicates a
     /// column that was kept and an unset bit a column that was removed.
     pub(super) fn remove_cols(&mut self, keep_col_mask: &FixedBitSet) {
-        let incompatible_msg = "Fragmentation and keep_col_mask are incompatible:";
+        let incompatible_msg = "fragmentation and keep_col_mask are incompatible:";
         if self.is_empty() {
             if keep_col_mask.is_empty() {
                 return;

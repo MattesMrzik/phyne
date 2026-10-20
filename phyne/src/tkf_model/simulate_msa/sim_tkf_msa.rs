@@ -224,11 +224,11 @@ where
 
         // Construct the final ancestral MSA from the combined records
         let seqs = Sequences::new(combined_records)
-            .unwrap_or_else(|e| bug!("Failed to create Sequences from combined records", e));
+            .unwrap_or_else(|e| bug!("failed to create Sequences from combined records", e));
         let phylo = AA::from_aligned_with_ancestral(seqs, self.indel_sim.tree().clone())
             .unwrap_or_else(|e| {
                 bug!(
-                    "Failed to create ancestral alignment from combined records",
+                    "failed to create ancestral alignment from combined records",
                     e
                 )
             });
@@ -236,7 +236,7 @@ where
         // so asserting here that the msa did indeed not shrink.
         let aln_len = indel_msa.len();
         if phylo.msa.len() != aln_len {
-            bug!("Final MSA length should match the indel MSA, but it does not")
+            bug!("final MSA length should match the indel MSA, but it does not")
         }
         phylo
     }

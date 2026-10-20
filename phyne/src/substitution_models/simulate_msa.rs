@@ -56,7 +56,7 @@ pub struct SubstitutionSimulator {
 }
 
 fn unwrap_weighted_index(slice: &[f64]) -> WeightedIndex<f64> {
-    WeightedIndex::new(slice).unwrap_or_else(|e| bug!("Getting WeightedIndex from slice failed", e))
+    WeightedIndex::new(slice).unwrap_or_else(|e| bug!("getting WeightedIndex from slice failed", e))
 }
 
 impl SubstitutionSimulator {
@@ -213,7 +213,7 @@ impl SubstitutionSimulator {
         let records = self.sequences_to_records(&sequences);
 
         Sequences::new(records)
-            .unwrap_or_else(|e| bug!("Creating Sequences from simulated records failed", e))
+            .unwrap_or_else(|e| bug!("creating Sequences from simulated records failed", e))
     }
 
     /// Returns a PhyloInfo with empty sequences for all nodes in the tree.
@@ -240,13 +240,13 @@ impl SubstitutionSimulator {
         rng: &mut RandomGenerator<R>,
     ) -> PhyloInfo<AA> {
         if alignment_length == 0 {
-            warn!("Alignment length is set to 0, will produce an empty alignment");
+            warn!("alignment length is set to 0, will produce an empty alignment");
             return self.zero_length_seqs_phylo_info();
         }
         let seqs = self.simulate_sequences(alignment_length, rng);
         AA::from_aligned_with_ancestral(seqs, self.tree.clone()).unwrap_or_else(|e| {
             bug!(
-                "Creating AncestralAlignment from simulated Sequences failed",
+                "creating AncestralAlignment from simulated Sequences failed",
                 e
             )
         })

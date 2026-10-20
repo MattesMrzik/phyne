@@ -305,10 +305,10 @@ impl<AA: AncestralAlignment> PhyloInfo<AA> {
 
         let aligned = self.aligned_seqs();
         let pruned_tree = prune_empty_leaves_from_tree(self.tree, &leaves_to_remove)
-            .unwrap_or_else(|e| bug!("Pruning empty leaves failed", e));
+            .unwrap_or_else(|e| bug!("pruning empty leaves failed", e));
         let original_len = self.msa.len();
         let phylo: PhyloInfo<AA> = rebuild_masa(&aligned, pruned_tree)
-            .unwrap_or_else(|e| bug!("Rebuilding MASA after pruning empty leaves failed", e));
+            .unwrap_or_else(|e| bug!("rebuilding MASA after pruning empty leaves failed", e));
         debug_assert_eq!(phylo.msa.len(), original_len);
         // Pruning only removes rows, not columns, so the fragmentation stays in sync.
         Ok(phylo)

@@ -261,7 +261,7 @@ macro_rules! bail {
 macro_rules! bug {
     ($msg:expr, $err:expr) => {
         panic!(
-            "{}. This should never happen. Please report this at {}. Error: {}",
+            "Bug: {}. This should never happen. Please report this at {}. Error: {}",
             $msg,
             $crate::REPORT_ISSUES_URL,
             $err
@@ -269,7 +269,7 @@ macro_rules! bug {
     };
     ($msg:expr) => {
         panic!(
-            "{}. This should never happen. Please report this at {}",
+            "Bug: {}. This should never happen. Please report this at {}",
             $msg,
             $crate::REPORT_ISSUES_URL
         )
@@ -796,7 +796,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues. Error: boom"
+        expected = "Bug: custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues. Error: boom"
     )]
     fn bug_macro_formats_message() {
         bug!("custom failure", "boom");
@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues"
+        expected = "Bug: custom failure. This should never happen. Please report this at https://github.com/acg-team/phyne/issues"
     )]
     fn bug_macro_without_error() {
         bug!("custom failure");
