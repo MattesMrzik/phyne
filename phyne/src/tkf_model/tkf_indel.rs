@@ -44,7 +44,7 @@ pub(super) enum Event {
 /// Trait for TKF indel models (i.e., [TKF91IndelModel](`crate::tkf_model::TKF91IndelModel`),
 /// [TKF92IndelModel](`crate::tkf_model::TKF92IndelModel`)).
 #[allow(clippy::upper_case_acronyms)]
-pub trait TKFModel: Clone + Display + Default {
+pub trait TKFModel: Clone + Display {
     // TODO: it might be better for model optimisation to have parameter lambda and scale s = mu/lambda,
     // because of the constraint that mu > lambda.
     // See issue #152 https://github.com/acg-team/phyne/issues/152

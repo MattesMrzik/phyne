@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
 
-use log::{debug, info};
-use rand::{Rng, RngCore, SeedableRng};
+use log::info;
+use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg32;
 
 use crate::alignment::{Alignment, AncestralAlignment};
@@ -17,6 +17,13 @@ use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFIndelCostBuilder, T
 use crate::tree::NodeIdx;
 use crate::{bail, Result, DEFAULT_EPSILON};
 
+/// Options for whether to optimise the [`indel model`](TKFModel) parameters during the
+/// [`TKFIndelInf`] inference process.
+pub enum IndelInfParamOpt {
+    Enabled,
+    Disabled,
+}
+
 /// Infers the homology path (the indel points, i.e. the presence/absence of characters)
 /// at the ancestral nodes of a [tree](`crate::tree::Tree`) under a [TKF](`TKFModel`) indel model.
 ///
@@ -29,7 +36,6 @@ use crate::{bail, Result, DEFAULT_EPSILON};
 /// # Example
 /// ```rust
 /// use phyne::alignment::{Alignment, AncestralAlignment, MASA, MSA, Sequences};
-/// use phyne::phylo_info::PhyloInfo;
 /// use phyne::tkf_model::{TKF92IndelModel, TKFIndelInf};
 /// use phyne::{record_wo_desc as record, tree};
 ///
@@ -53,22 +59,23 @@ use crate::{bail, Result, DEFAULT_EPSILON};
 pub struct TKFIndelInf<T, R = Pcg32>
 where
     T: TKFModel,
-    R: Rng + SeedableRng + RngCore,
+    R: Rng + SeedableRng,
 {
     epsilon: f64,
     max_iterations: Option<usize>,
-    param_opt: bool,
+    param_opt: IndelInfParamOpt,
     indel_model: T,
-    // rng for reproducibility when breaking ties in the re-estimation process
+    /// It is wrapped in a RefCell to allow interior mutability, as the re-estimation process needs to mutate
+    /// the rng state and the methods of [`AncestralSequenceReconstruction`] require &self, not &mut self.
     rng: RefCell<RandomGenerator<R>>,
 }
 
-impl<T: TKFModel> Default for TKFIndelInf<T, Pcg32> {
+impl<T: TKFModel + Default> Default for TKFIndelInf<T, Pcg32> {
     fn default() -> Self {
         Self {
             epsilon: DEFAULT_EPSILON,
             max_iterations: None,
-            param_opt: false,
+            param_opt: IndelInfParamOpt::Disabled,
             indel_model: T::default(),
             rng: RefCell::new(DefaultGenerator::default()),
         }
@@ -78,19 +85,21 @@ impl<T: TKFModel> Default for TKFIndelInf<T, Pcg32> {
 impl<T, R> TKFIndelInf<T, R>
 where
     T: TKFModel,
-    R: Rng + SeedableRng + RngCore,
+    R: Rng + SeedableRng,
 {
-    // TODO: what other ctors do we want?, perhaps some with default model but passing the other params
+    /// Creates a new [`TKFIndelInf`] with the given attributes.
+    ///
+    /// The `rng` is for reproducibility when breaking ties in the re-estimation dynamic programming process.
     pub fn new_with_attr(
         indel_model: T,
         epsilon: f64,
         max_iterations: Option<usize>,
-        param_opt: bool,
+        param_opt: IndelInfParamOpt,
         rng: RandomGenerator<R>,
     ) -> Result<Self> {
         if epsilon < 0.0 {
             bail!(
-                Tree,
+                Asr,
                 "epsilon must be greater than or equal to 0, but got {}",
                 epsilon
             );
@@ -99,7 +108,7 @@ where
         if let Some(max_iters) = max_iterations {
             if max_iters == 0 {
                 bail!(
-                    Tree,
+                    Asr,
                     "max_iterations must be greater than 0, but got {}",
                     max_iters
                 );
@@ -118,7 +127,7 @@ where
 impl<T, R, A, AA> AncestralSequenceReconstruction<A, AA> for TKFIndelInf<T, R>
 where
     T: TKFModel,
-    R: Rng + SeedableRng + RngCore,
+    R: Rng + SeedableRng,
     A: Alignment,
     AA: AncestralAlignment,
 {
@@ -126,8 +135,7 @@ where
         self.estimate_homology_paths(phylo).unwrap().phylo
     }
 
-    fn reconstruct_ancestral_seqs(&self, mut phylo: PhyloInfo<A>) -> Result<PhyloInfo<AA>> {
-        set_missing_tree_node_ids(&mut phylo.tree)?;
+    fn reconstruct_ancestral_seqs(&self, phylo: PhyloInfo<A>) -> Result<PhyloInfo<AA>> {
         let result = self.estimate_homology_paths(phylo)?;
         Ok(result.phylo)
     }
@@ -145,16 +153,23 @@ where
     pub model: T,
 }
 
-impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
+impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
+    /// Estimates the homology paths (ancestral gap/non-gap patterns) starting from a parsimony
+    /// reconstruction of the ancestral sequences at the internal nodes of the tree.
+    /// It then iteratively re-estimates the ancestral sequences at the internal nodes of the tree
+    /// until convergence and, optionally ([`TKFIndelInf::estimate_homology_paths_from_initial`]).
     pub fn estimate_homology_paths<A: Alignment, AA: AncestralAlignment>(
         &self,
-        phylo: PhyloInfo<A>,
+        mut phylo: PhyloInfo<A>,
     ) -> Result<TKFIndelInfResult<T, AA>> {
+        set_missing_tree_node_ids(&mut phylo.tree)?;
         let asr = ParsimonyPresenceAbsence {};
         let initial_indel_points = asr.reconstruct_ancestral_seqs(phylo)?;
         self.estimate_homology_paths_from_initial(initial_indel_points)
     }
 
+    /// Estimates the homology paths (ancestral gap/non-gap patterns) starting from an initial guess
+    /// of the ancestral sequences at the internal nodes of the tree.
     pub fn estimate_homology_paths_from_initial<AA: AncestralAlignment>(
         &self,
         phylo: PhyloInfo<AA>,
@@ -173,10 +188,11 @@ impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
             iterations += 1;
             info!("Iteration: {iterations}, current cost: {curr_cost}");
             prev_cost = curr_cost;
-            if self.param_opt {
+            if let IndelInfParamOpt::Enabled = self.param_opt {
                 cost = Self::optimise_params(cost, intermediate_stop_condition)?;
             }
-            curr_cost = Self::reestimate_edges(&mut cost, &mut self.rng.borrow_mut(), curr_cost);
+            Self::reestimate_edges(&mut cost, &mut self.rng.borrow_mut());
+            curr_cost = cost.cost();
             delta = curr_cost - prev_cost;
         }
 
@@ -206,28 +222,16 @@ impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
     fn reestimate_edges<AA: AncestralAlignment>(
         cost: &mut TKFIndelCost<T, AA>,
         rng: &mut RandomGenerator<R>,
-        mut curr_cost: f64,
-    ) -> f64 {
+    ) {
         let mut reestimator = EdgeSeqsReestimator::new(cost, rng);
         for node in reestimator.phylo().tree.postorder().clone() {
             if node == reestimator.phylo().tree.root {
                 continue;
             }
-            match node {
-                NodeIdx::Internal(_) => {
-                    let prev_cost = curr_cost;
-                    curr_cost = reestimator.reestimate_unchecked(&node);
-                    debug!(
-                        "Re-estimated sequences at node {node}, cost after re-estimation: {curr_cost}",
-                    );
-                    if curr_cost > prev_cost {
-                        debug!("Cost improved");
-                    }
-                }
-                NodeIdx::Leaf(_) => {}
+            if let NodeIdx::Internal(_) = node {
+                reestimator.reestimate_unchecked(&node);
             }
         }
-        curr_cost
     }
 }
 
@@ -247,8 +251,6 @@ mod tests {
     use super::*;
 
     const MAX_ITERATIONS: Option<usize> = Some(10);
-    const PARAM_OPTI: bool = true;
-    const NO_PARAM_OPTI: bool = false;
 
     #[test]
     fn new_with_attr_fails_for_invalid_attributes() {
@@ -256,24 +258,24 @@ mod tests {
             TKF92IndelModel::default(),
             -0.1,
             MAX_ITERATIONS,
-            NO_PARAM_OPTI,
+            IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
         .err()
         .unwrap();
-        assert_matches!(err, Error::Tree(msg)
+        assert_matches!(err, Error::Asr(msg)
             if msg.contains("epsilon must be greater than or equal to 0"));
 
         let err = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             TKF92IndelModel::default(),
             DEFAULT_EPSILON,
             Some(0),
-            NO_PARAM_OPTI,
+            IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
         .err()
         .unwrap();
-        assert_matches!(err, Error::Tree(msg)
+        assert_matches!(err, Error::Asr(msg)
             if msg.contains("max_iterations must be greater than 0"));
     }
 
@@ -316,7 +318,7 @@ mod tests {
             model.clone(),
             DEFAULT_EPSILON,
             MAX_ITERATIONS,
-            NO_PARAM_OPTI,
+            IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
         .unwrap();
@@ -336,7 +338,7 @@ mod tests {
             model.clone(),
             DEFAULT_EPSILON,
             MAX_ITERATIONS,
-            PARAM_OPTI,
+            IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
         .unwrap();
@@ -357,7 +359,7 @@ mod tests {
             model.clone(),
             DEFAULT_EPSILON,
             MAX_ITERATIONS,
-            NO_PARAM_OPTI,
+            IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
         .unwrap();
@@ -370,7 +372,7 @@ mod tests {
             model,
             DEFAULT_EPSILON,
             MAX_ITERATIONS,
-            PARAM_OPTI,
+            IndelInfParamOpt::Enabled,
             DefaultGenerator::new(123),
         )
         .unwrap();
@@ -416,7 +418,7 @@ mod tests {
             model,
             DEFAULT_EPSILON,
             MAX_ITERATIONS,
-            NO_PARAM_OPTI,
+            IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
         .unwrap();

@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 use hashbrown::HashSet;
-use itertools::any;
 use num_enum::{FromPrimitive, IntoPrimitive};
 use rand::{Rng, SeedableRng};
 use rand_distr::Geometric;
@@ -48,7 +47,7 @@ impl TKF92IndelModel {
             );
         }
 
-        if any(params, |&p| p.is_nan() || p.is_infinite() || p <= 0.0) {
+        if params.iter().any(|p| p.is_finite() || *p <= 0.0) {
             bail!(
                 Tkf,
                 "All parameters for TKF92 model must be positive non-nan and not infinite, but got {:?}",

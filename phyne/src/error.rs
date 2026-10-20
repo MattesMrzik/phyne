@@ -9,6 +9,9 @@ pub enum Error {
     #[error("Alphabet error: {0}")]
     Alphabet(String),
 
+    #[error("ASR error: {0}")]
+    Asr(String),
+
     #[error("Sequence error: {0}")]
     Sequence(String),
 
