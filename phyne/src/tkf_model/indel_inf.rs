@@ -244,6 +244,10 @@ mod tests {
 
     use super::*;
 
+    const MAX_ITERATIONS: Option<usize> = Some(10);
+    const PARAM_OPTI: bool = true;
+    const NO_PARAM_OPTI: bool = false;
+
     fn setup_msa() -> PhyloInfo<MSA> {
         let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
         MSA::from_aligned(
@@ -268,9 +272,9 @@ mod tests {
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model.clone(),
             DEFAULT_EPSILON,
-            Some(10),
-            false,
-            DefaultGenerator::new(42),
+            MAX_ITERATIONS,
+            NO_PARAM_OPTI,
+            DefaultGenerator::new(123),
         )
         .unwrap();
 
@@ -288,9 +292,9 @@ mod tests {
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model.clone(),
             DEFAULT_EPSILON,
-            Some(10),
-            true,
-            DefaultGenerator::new(42),
+            MAX_ITERATIONS,
+            PARAM_OPTI,
+            DefaultGenerator::new(123),
         )
         .unwrap();
 
@@ -309,9 +313,9 @@ mod tests {
         let inf_no_opt = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model.clone(),
             DEFAULT_EPSILON,
-            Some(10),
-            false,
-            DefaultGenerator::new(42),
+            MAX_ITERATIONS,
+            NO_PARAM_OPTI,
+            DefaultGenerator::new(123),
         )
         .unwrap();
         let result_no_opt = inf_no_opt
@@ -322,9 +326,9 @@ mod tests {
         let inf_opt = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model,
             DEFAULT_EPSILON,
-            Some(10),
-            true,
-            DefaultGenerator::new(42),
+            MAX_ITERATIONS,
+            PARAM_OPTI,
+            DefaultGenerator::new(123),
         )
         .unwrap();
         let result_opt = inf_opt
@@ -368,9 +372,9 @@ mod tests {
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model,
             DEFAULT_EPSILON,
-            Some(10),
-            false,
-            DefaultGenerator::new(42),
+            MAX_ITERATIONS,
+            NO_PARAM_OPTI,
+            DefaultGenerator::new(123),
         )
         .unwrap();
         let result = inf
