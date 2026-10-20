@@ -121,9 +121,10 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
     /// Builds the PhyloInfo struct from the sequence file and the tree file (if provided).
     /// If the provided tree file has more than one tree, only the first tree will be processed.
     /// If no tree file is provided, an NJ tree is built from the sequences.
+    /// If the leaf sequences are not aligned, they will be aligned using the provided aligner or
+    /// [parsimony](`ParsimonyAligner`) by default.
     /// Bails if no sequences are provided.
     /// Bails if the IDs of the tree leaves and the sequences do not match.
-    /// Bails if the sequences are not aligned.
     /// Returns the PhyloInfo struct with the model type, tree, msa and leaf encoding set.
     ///
     /// # Example
@@ -162,10 +163,34 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
         Ok(phylo)
     }
 
+    /// Builds the PhyloInfo struct from the sequence file and the tree file (if provided).
+    /// If sequences are only provided for the leaves, ancestral sequences will be inferred
+    /// using the provided ASR method or [parsimony](`ParsimonyPresenceAbsence`) by default.
+    /// If no tree file is provided, an NJ tree is built from the sequences.
+    /// If the leaf sequences are not aligned, they will be aligned using the provided aligner or
+    /// [parsimony](`ParsimonyAligner`) by default.
+    ///
+    /// # Errors
+    ///
+    /// * Bails if no sequences are provided.
+    /// * Bails if the IDs of the tree leaves and the sequences do not match.
+    /// * Bails if unaligned ancestral sequences are provided, as this is not supported.
     pub fn build_with_ancestors(self) -> Result<PhyloInfo<AA>> {
         self.build_with_ancestors_w_rng(&mut DefaultGenerator::default())
     }
 
+    /// Builds the PhyloInfo struct from the sequence file and the tree file (if provided).
+    /// If sequences are only provided for the leaves, ancestral sequences will be inferred
+    /// using the provided ASR method or [parsimony](`ParsimonyPresenceAbsence`) by default.
+    /// If no tree file is provided, an NJ tree is built from the sequences.
+    /// If the leaf sequences are not aligned, they will be aligned using the provided aligner or
+    /// [parsimony](`ParsimonyAligner`) by default.
+    ///
+    /// # Errors
+    ///
+    /// * Bails if no sequences are provided.
+    /// * Bails if the IDs of the tree leaves and the sequences do not match.
+    /// * Bails if unaligned ancestral sequences are provided, as this is not supported.
     pub fn build_with_ancestors_w_rng<R>(
         self,
         rng: &mut RandomGenerator<R>,
@@ -179,9 +204,7 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
         let phylo = if sequences.len() == tree.n {
             set_missing_tree_node_ids(&mut tree)?;
             if sequences.aligned {
-                info!(
-                    "Aligned sequences without ancestral sequences. Inferring ancestral sequences"
-                );
+                info!("Ancestral sequences are not provided, inferring them");
                 AA::from_aligned(sequences, tree)?
             } else {
                 info!("Sequences are not aligned, aligning");
@@ -294,7 +317,33 @@ impl<A: Alignment, AA: AncestralAlignment> PhyloInfoBuilder<A, AA> {
 }
 
 /// Sets missing ids and bails if there are duplicates among the node ids that were already set.
-pub(crate) fn set_missing_tree_node_ids(tree: &mut Tree) -> Result<()> {
+///
+/// Nodes without a name in the Newick string get an auto-generated id of the form `I<count>`.
+///
+/// # Example
+/// ```
+/// use phyne::phylo_info::set_missing_tree_node_ids;
+/// use phyne::tree;
+/// # use phyne::Result;
+///
+/// # fn main() -> Result<()> {
+/// // the internal node ids are not set
+/// let mut tree = tree!("((A1:1.0,B1:1.0):1.0,C2:1.0):1.0;");
+/// let root = &tree.root.clone();
+/// let internal_node = &tree.by_id("A1").parent.unwrap().clone();
+/// assert_eq!(tree.node_id(root), "");
+/// assert_eq!(tree.node_id(internal_node), "");
+///
+/// set_missing_tree_node_ids(&mut tree)?;
+///
+/// assert_eq!(tree.node_id(root), "I1");
+/// assert_eq!(tree.node_id(internal_node), "I0");
+/// # Ok(()) }
+/// ```
+///
+/// # Errors
+/// * If a node id occurs more than once in the tree.
+pub fn set_missing_tree_node_ids(tree: &mut Tree) -> Result<()> {
     // We want to take a &mut Tree and not take ownership, since in asr we take a PhyloInfo<A> where
     // its tree might be missing internal nodes and we don't want to take the tree out of the
     // PhyloInfo
