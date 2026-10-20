@@ -45,9 +45,9 @@ use crate::{bail, Result, DEFAULT_EPSILON};
 ///     tree,
 /// )?;
 /// let inf = TKFIndelInf::<TKF92IndelModel>::default();
-/// let (ancestral_phylo, _model) = inf.estimate_homology_path::<_, MASA>(phylo)?;
-/// assert_eq!(ancestral_phylo.msa.seqs().len(), 3);
-/// assert_eq!(ancestral_phylo.msa.ancestral_seqs().len(), 2);
+/// let result = inf.estimate_homology_paths::<_, MASA>(phylo)?;
+/// assert_eq!(result.phylo.msa.seqs().len(), 3);
+/// assert_eq!(result.phylo.msa.ancestral_seqs().len(), 2);
 /// # Ok(()) }
 /// ```
 pub struct TKFIndelInf<T, R = Pcg32>
@@ -234,19 +234,48 @@ impl<T: TKFModel, R: Rng + SeedableRng + RngCore> TKFIndelInf<T, R> {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
+    use assert_matches::assert_matches;
+
     use crate::alignment::{Alignment, AncestralAlignment, Sequences, MASA, MSA};
     use crate::asr::AncestralSequenceReconstruction;
     use crate::likelihood::ModelSearchCost;
     use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
     use crate::random::DefaultGenerator;
     use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder, TKFModel};
-    use crate::{record_wo_desc as record, tree, DEFAULT_EPSILON};
+    use crate::{record_wo_desc as record, tree, Error, DEFAULT_EPSILON};
 
     use super::*;
 
     const MAX_ITERATIONS: Option<usize> = Some(10);
     const PARAM_OPTI: bool = true;
     const NO_PARAM_OPTI: bool = false;
+
+    #[test]
+    fn new_with_attr_fails_for_invalid_attributes() {
+        let err = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            TKF92IndelModel::default(),
+            -0.1,
+            MAX_ITERATIONS,
+            NO_PARAM_OPTI,
+            DefaultGenerator::new(123),
+        )
+        .err()
+        .unwrap();
+        assert_matches!(err, Error::Tree(msg)
+            if msg.contains("epsilon must be greater than or equal to 0"));
+
+        let err = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
+            TKF92IndelModel::default(),
+            DEFAULT_EPSILON,
+            Some(0),
+            NO_PARAM_OPTI,
+            DefaultGenerator::new(123),
+        )
+        .err()
+        .unwrap();
+        assert_matches!(err, Error::Tree(msg)
+            if msg.contains("max_iterations must be greater than 0"));
+    }
 
     fn setup_msa() -> PhyloInfo<MSA> {
         let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
