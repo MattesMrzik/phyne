@@ -7,8 +7,10 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::ParamRange;
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
-use crate::tkf_model::{TKFModel, DEFAULT_LAMBDA, DEFAULT_MU};
-use crate::{bail, Result};
+use crate::tkf_model::{
+    validate_lambda_mu, validate_tkf_params, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
+};
+use crate::Result;
 
 pub const TKF91_PARAM_COUNT: usize = 2;
 
@@ -31,33 +33,11 @@ impl TKF91IndelModel {
     /// Validates the parameters and returns an error if they are invalid:
     /// 0 < lambda < mu < infinity.
     pub fn new(params: &[f64]) -> Result<Self> {
-        if params.len() != TKF91_PARAM_COUNT {
-            bail!(
-                Tkf,
-                "Expected {} parameters for TKF91 model (lambda, mu), but got {}",
-                TKF91_PARAM_COUNT,
-                params.len()
-            );
-        }
-
-        if params.iter().any(|p| !p.is_finite() || *p <= 0.0) {
-            bail!(
-                Tkf,
-                "All parameters for TKF91 model must be positive non-nan and not infinite, but got {:?}",
-                params
-            );
-        }
-
-        if params[usize::from(TKF91Parameters::Lambda)] >= params[usize::from(TKF91Parameters::Mu)]
-        {
-            bail!(
-                Tkf,
-                "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
-                params[usize::from(TKF91Parameters::Lambda)],
-                params[usize::from(TKF91Parameters::Mu)]
-            );
-        }
-
+        validate_tkf_params(params, TKF91_PARAM_COUNT, "TKF91", "lambda, mu")?;
+        validate_lambda_mu(
+            params[usize::from(TKF91Parameters::Lambda)],
+            params[usize::from(TKF91Parameters::Mu)],
+        )?;
         Ok(Self {
             params: params.to_vec(),
         })

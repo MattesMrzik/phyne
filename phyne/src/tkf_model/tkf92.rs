@@ -9,8 +9,11 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
-use crate::tkf_model::{TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R};
-use crate::{bail, Result};
+use crate::tkf_model::{
+    validate_lambda_mu, validate_r, validate_tkf_params, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
+    DEFAULT_R,
+};
+use crate::Result;
 
 pub const TKF92_PARAM_COUNT: usize = 3;
 
@@ -38,41 +41,12 @@ impl TKF92IndelModel {
     /// Validates the parameters and returns an error if they are invalid:
     /// 0 < lambda < mu < infinity, 0 < r < 1.
     pub fn new(params: &[f64]) -> Result<Self> {
-        if params.len() != TKF92_PARAM_COUNT {
-            bail!(
-                Tkf,
-                "Expected {} parameters for TKF92 model (lambda, mu, r), but got {}",
-                TKF92_PARAM_COUNT,
-                params.len()
-            );
-        }
-
-        if params.iter().any(|p| p.is_finite() || *p <= 0.0) {
-            bail!(
-                Tkf,
-                "All parameters for TKF92 model must be positive non-nan and not infinite, but got {:?}",
-                params
-            );
-        }
-
-        if params[usize::from(TKF92Parameters::Lambda)] >= params[usize::from(TKF92Parameters::Mu)]
-        {
-            bail!(
-                Tkf,
-                "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
-                params[usize::from(TKF92Parameters::Lambda)],
-                params[usize::from(TKF92Parameters::Mu)]
-            );
-        }
-
-        if params[usize::from(TKF92Parameters::R)] >= 1.0 {
-            bail!(
-                Tkf,
-                "Parameter r must be in (0, 1), but got r = {}",
-                params[usize::from(TKF92Parameters::R)]
-            );
-        }
-
+        validate_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
+        validate_lambda_mu(
+            params[usize::from(TKF92Parameters::Lambda)],
+            params[usize::from(TKF92Parameters::Mu)],
+        )?;
+        validate_r(params[usize::from(TKF92Parameters::R)])?;
         let r = params[usize::from(TKF92Parameters::R)];
         Ok(Self {
             params: params.to_vec(),

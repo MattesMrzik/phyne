@@ -338,7 +338,7 @@ mod tests {
             model.clone(),
             DEFAULT_EPSILON,
             MAX_ITERATIONS,
-            IndelInfParamOpt::Disabled,
+            IndelInfParamOpt::Enabled,
             DefaultGenerator::new(123),
         )
         .unwrap();

@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 
-use itertools::any;
 use log::warn;
 use num_enum::FromPrimitive;
 use rstest::rstest;
@@ -10,10 +9,11 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, TKF92Parameters, TKFIndelCost, TKFIndelModelInfo, TKFModel,
-    DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R, TKF92_PARAM_COUNT,
+    blocks_of_alignment, validate_lambda_mu, validate_r, validate_tkf_params, TKF92Parameters,
+    TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
+    TKF92_PARAM_COUNT,
 };
-use crate::{bail, Result};
+use crate::Result;
 
 /// TKF92 indel model with a `fixed fragmentation` (and without a substitution model),
 /// which means that the provided fragmentation will be regarded as the true fragmentation.
@@ -36,41 +36,12 @@ impl TKF92FixedIndelModel {
     }
 
     pub fn new(params: &[f64], fragmentation: Vec<usize>) -> Result<Self> {
-        if params.len() != TKF92_PARAM_COUNT {
-            bail!(
-                Tkf,
-                "Expected {} parameters for TKF92 model (lambda, mu, r), but got {}",
-                TKF92_PARAM_COUNT,
-                params.len()
-            );
-        }
-
-        if any(params, |&p| p.is_nan() || p.is_infinite() || p <= 0.0) {
-            bail!(
-                Tkf,
-                "All parameters for TKF92 model must be positive non-nan and not infinite, but got {:?}",
-                params
-            );
-        }
-
-        if params[usize::from(TKF92Parameters::Lambda)] >= params[usize::from(TKF92Parameters::Mu)]
-        {
-            bail!(
-                Tkf,
-                "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
-                params[usize::from(TKF92Parameters::Lambda)],
-                params[usize::from(TKF92Parameters::Mu)]
-            );
-        }
-
-        if params[usize::from(TKF92Parameters::R)] >= 1.0 {
-            bail!(
-                Tkf,
-                "Parameter r must be in (0, 1), but got r = {}",
-                params[usize::from(TKF92Parameters::R)]
-            );
-        }
-
+        validate_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
+        validate_lambda_mu(
+            params[usize::from(TKF92Parameters::Lambda)],
+            params[usize::from(TKF92Parameters::Mu)],
+        )?;
+        validate_r(params[usize::from(TKF92Parameters::R)])?;
         let ln_r = params[usize::from(TKF92Parameters::R)].ln();
         Ok(Self {
             params: params.to_vec(),

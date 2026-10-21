@@ -25,6 +25,58 @@ pub(super) static DEFAULT_LAMBDA: f64 = 1.0;
 pub(super) static DEFAULT_MU: f64 = 1.1;
 pub(super) static DEFAULT_R: f64 = 0.5;
 
+/// Validates the number of parameters and checks that all of them are positive, finite and
+/// non-NaN for a TKF model.
+pub(super) fn validate_tkf_params(
+    params: &[f64],
+    expected_len: usize,
+    model_name: &str,
+    param_names: &str,
+) -> Result<()> {
+    if params.len() != expected_len {
+        bail!(
+            Tkf,
+            "Expected {} parameters for {} model ({}), but got {}",
+            expected_len,
+            model_name,
+            param_names,
+            params.len()
+        );
+    }
+
+    if params.iter().any(|p| !p.is_finite() || *p <= 0.0) {
+        bail!(
+            Tkf,
+            "All parameters for {} model must be positive non-nan and not infinite, but got {:?}",
+            model_name,
+            params
+        );
+    }
+    Ok(())
+}
+
+/// Validates that the TKF model parameters satisfy lambda < mu.
+pub(super) fn validate_lambda_mu(lambda: f64, mu: f64) -> Result<()> {
+    if lambda >= mu {
+        bail!(
+            Tkf,
+            "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
+            lambda,
+            mu
+        );
+    }
+    Ok(())
+}
+
+/// Validates that the TKF92 parameter r is in (0, 1). Assumes that r has already been checked
+/// to be positive, e.g. by [`validate_tkf_params`].
+pub(super) fn validate_r(r: f64) -> Result<()> {
+    if r >= 1.0 {
+        bail!(Tkf, "Parameter r must be in (0, 1), but got r = {}", r);
+    }
+    Ok(())
+}
+
 /// For the function [u]: only if the time is shorter than this threshold, we use the Taylor approximation.
 static SHORT_TIME_U: f64 = 1e-5;
 /// For the function [u]: the critical threshold used for condition 4. Only necessary for x86 CPUs.
