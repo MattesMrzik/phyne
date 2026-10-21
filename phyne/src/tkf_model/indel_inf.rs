@@ -11,7 +11,7 @@ use crate::evolutionary_models::FrequencyOptimisation;
 use crate::likelihood::ModelSearchCost;
 use crate::optimisers::{ModelOptimiser, StopCondition};
 use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
-use crate::phylo_info::{set_missing_tree_node_ids, PhyloInfo};
+use crate::phylo_info::PhyloInfo;
 use crate::random::{DefaultGenerator, RandomGenerator};
 use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFIndelCostBuilder, TKFModel};
 use crate::tree::NodeIdx;
@@ -71,6 +71,14 @@ where
 }
 
 impl<T: TKFModel + Default> Default for TKFIndelInf<T, Pcg32> {
+    /// Creates a new [`TKFIndelInf`] with default attributes.
+    ///
+    /// It uses the default [`TKFModel`] implementation for the indel model, a default epsilon of
+    /// [`DEFAULT_EPSILON`], no maximum number of iterations, and no parameter optimisation.
+    /// The `rng` is seeded with a random seed and is used for breaking ties in the re-estimation
+    /// dynamic programming process. It advances across iterations, so the results are not
+    /// reproducible across different runs of the same code. For reproducible results, use
+    /// [`TKFIndelInf::new_with_attr`] and provide your own `rng`.
     fn default() -> Self {
         Self {
             epsilon: DEFAULT_EPSILON,
@@ -97,12 +105,8 @@ where
         param_opt: IndelInfParamOpt,
         rng: RandomGenerator<R>,
     ) -> Result<Self> {
-        if epsilon < 0.0 {
-            bail!(
-                Asr,
-                "epsilon must be greater than or equal to 0, but got {}",
-                epsilon
-            );
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            bail!(Asr, "epsilon must be greater than 0, but got {}", epsilon);
         }
 
         if let Some(max_iters) = max_iterations {
@@ -160,10 +164,10 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
     /// until convergence and, optionally ([`TKFIndelInf::estimate_homology_paths_from_initial`]).
     pub fn estimate_homology_paths<A: Alignment, AA: AncestralAlignment>(
         &self,
-        mut phylo: PhyloInfo<A>,
+        phylo: PhyloInfo<A>,
     ) -> Result<TKFIndelInfResult<T, AA>> {
-        set_missing_tree_node_ids(&mut phylo.tree)?;
         let asr = ParsimonyPresenceAbsence {};
+        // set missing tree node ids is called by the reconstruct_ancestral_seqs
         let initial_indel_points = asr.reconstruct_ancestral_seqs(phylo)?;
         self.estimate_homology_paths_from_initial(initial_indel_points)
     }
@@ -218,7 +222,6 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
 
     /// Re-estimates the ancestral sequences at all non-root internal nodes of the tree,
     /// keeping all other sequences and the tree fixed.
-    /// Returns the resulting cost after re-estimation.
     fn reestimate_edges<AA: AncestralAlignment>(
         cost: &mut TKFIndelCost<T, AA>,
         rng: &mut RandomGenerator<R>,
@@ -264,7 +267,7 @@ mod tests {
         .err()
         .unwrap();
         assert_matches!(err, Error::Asr(msg)
-            if msg.contains("epsilon must be greater than or equal to 0"));
+            if msg.contains("epsilon must be greater than 0"));
 
         let err = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             TKF92IndelModel::default(),
