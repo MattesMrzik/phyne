@@ -364,6 +364,7 @@ impl<T: TKFModel, AA: AncestralAlignment> TKFIndelCost<T, AA> {
         };
         model_info.previous_event_deletion.set(node_id, false);
         model_info.valid.set(node_id, false);
+        model_info.valid_for_reestimation.set(node_id, false);
     }
 
     fn set_node_values(
@@ -511,6 +512,7 @@ impl<T: TKFModel, AA: AncestralAlignment> ModelSearchCost for TKFIndelCost<T, AA
     fn set_param(&mut self, idx: usize, value: f64) {
         self.model.set_param(idx, value);
         self.model_info.borrow_mut().valid.clear();
+        self.model_info.borrow_mut().valid_for_reestimation.clear();
     }
 
     /// Returns the valid range for a model parameter [min, max], inclusive.
