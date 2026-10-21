@@ -1,9 +1,9 @@
-use std::cell::RefCell;
-use std::fmt::Display;
-
+#[cfg(test)]
 use log::warn;
 use num_enum::FromPrimitive;
 use rstest::rstest;
+use std::cell::RefCell;
+use std::fmt::Display;
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
@@ -13,7 +13,7 @@ use crate::tkf_model::{
     TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
     TKF92_PARAM_COUNT,
 };
-use crate::Result;
+use crate::{bail, Result};
 
 /// TKF92 indel model with a `fixed fragmentation` (and without a substitution model),
 /// which means that the provided fragmentation will be regarded as the true fragmentation.
@@ -180,25 +180,39 @@ pub struct TKF92FixedIndelCostBuilder<AA: AncestralAlignment> {
 
 /// Removes duplicates and out-of-bounds entries.
 #[cfg(test)]
-pub(super) fn validate_fragmentation(fragmentation: &[usize], msa_len: usize) -> Vec<usize> {
-    let mut fragmentation = fragmentation.to_vec();
-    let original_len = fragmentation.len();
-    if original_len == 0 {
-        return vec![];
+pub(super) fn validate_fragmentation(fragmentation: &[usize], msa_len: usize) -> Result<()> {
+    if fragmentation.is_empty() {
+        return Ok(());
     }
-    fragmentation.sort();
-    // dedup() must be called after sorting
-    fragmentation.dedup();
-    let deduped_len = fragmentation.len();
-    if deduped_len < original_len {
-        warn!("Fragmentation had duplicate entries, which were removed.");
+
+    for f in fragmentation {
+        if f > &msa_len {
+            bail!(
+                Tkf,
+                "Fragmentation index {f} is out of bounds for MSA length {msa_len}"
+            );
+        }
+        if f == &0 {
+            bail!(
+                Tkf,
+                "Fragmentation index {f} is out of bounds (must be > 0)"
+            );
+        }
     }
-    fragmentation.retain(|&x| x > 0 && x <= msa_len);
-    let retained_len = fragmentation.len();
-    if retained_len < deduped_len {
-        warn!("Fragmentation had entries out of bounds (0, seq_len], which were removed.");
+    let original_fragmentation = fragmentation.to_vec();
+    let sorted_and_deduped: Vec<usize> = {
+        let mut temp = fragmentation.to_vec();
+        temp.sort();
+        temp.dedup();
+        temp
+    };
+    if sorted_and_deduped != original_fragmentation {
+        bail!(
+            Tkf,
+            "Fragmentation was not sorted or had duplicates, which is not allowed."
+        );
     }
-    fragmentation.to_vec()
+    Ok(())
 }
 
 #[cfg(test)]
@@ -208,6 +222,7 @@ impl<AA: AncestralAlignment> TKF92FixedIndelCostBuilder<AA> {
     }
 
     pub fn build(self) -> Result<TKFIndelCost<TKF92FixedIndelModel, AA>> {
+        validate_fragmentation(&self.model.fragmentation, self.phylo.msa.len())?;
         let info = TKFIndelModelInfo::new(&self.model, &self.phylo);
         Ok(TKFIndelCost {
             model: self.model,
@@ -240,12 +255,26 @@ mod private_tests {
         merged
     }
 
-    #[test]
-    fn tkf_validate_fragmentation() {
-        let fragmentation = vec![3, 19, 3, 4, 58, 13, 0, 1, 0, 3, 4, 15, 16];
+    #[rstest]
+    #[case( vec![3, 19, 3, 4, 58, 13, 0, 1, 0, 3, 4, 15, 16])]
+    #[case( vec![3, 4, 15, 0])]
+    #[case( vec![0, 3, 4, 15])]
+    #[case( vec![3, 3, 4])]
+    #[case( vec![4, 3])]
+    fn tkf_invalid_fragmentation(#[case] fragmentation: Vec<usize>) {
         let msa_len = 15;
-        let validated = validate_fragmentation(&fragmentation, msa_len);
-        assert_eq!(validated, vec![1, 3, 4, 13, 15]);
+        let result = validate_fragmentation(&fragmentation, msa_len);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case( vec![])]
+    #[case( vec![3, 4])]
+    #[case( vec![3, 4, 15, 16])]
+    fn tkf_valid_fragmentation(#[case] fragmentation: Vec<usize>) {
+        let msa_len = 16;
+        let result = validate_fragmentation(&fragmentation, msa_len);
+        assert!(result.is_ok());
     }
 
     #[rstest]

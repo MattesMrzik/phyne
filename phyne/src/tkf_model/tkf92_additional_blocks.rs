@@ -144,14 +144,13 @@ impl<AA: AncestralAlignment> TKF92IndelAddBlocksCostBuilder<AA> {
             params[usize::from(TKF92Parameters::Mu)],
         )?;
         validate_r(params[usize::from(TKF92Parameters::R)])?;
-        let additional_blocks =
-            validate_fragmentation(&self.additional_blocks, self.phylo.msa.len());
+        validate_fragmentation(&self.additional_blocks, self.phylo.msa.len())?;
         let r = params[usize::from(TKF92Parameters::R)];
         let model = TKF92IndelModelAddBlocks {
             params,
             ln_r: r.ln(),
             ln_one_minus_r_over_r: ((1.0 - r) / r).ln(),
-            additional_blocks,
+            additional_blocks: self.additional_blocks,
         };
         let info = TKFIndelModelInfo::new(&model, &self.phylo);
         Ok(TKFIndelCost {
