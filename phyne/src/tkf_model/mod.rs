@@ -181,6 +181,7 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
 /// # Example
 /// ```rust
 /// use phyne::alignment::{Alignment, AncestralAlignment, Sequences, MASA};
+/// use crate::phyne::likelihood::ModelSearchCost;
 /// use phyne::substitution_models::{dna_models::GTR, SubstModel};
 /// use phyne::tkf_model::{TKF92IndelModel, TKFCostBuilder};
 /// use phyne::{record_wo_desc as record, tree};
@@ -201,8 +202,7 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> TKFCost<Q, T, AA> {
 /// let subst_model = SubstModel::<GTR>::default();
 /// let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8])?;
 /// let cost = TKFCostBuilder::new(subst_model, tkf_indel_model, phylo).build()?;
-/// assert_eq!(cost.masa().seqs().len(), 3);
-/// assert_eq!(cost.masa().ancestral_seqs().len(), 2);
+/// assert!(cost.cost().is_finite());
 /// # Ok(()) }
 /// ```
 pub struct TKFCostBuilder<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> {

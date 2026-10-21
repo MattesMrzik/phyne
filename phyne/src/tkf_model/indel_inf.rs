@@ -160,8 +160,8 @@ where
 impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
     /// Estimates the homology paths (ancestral gap/non-gap patterns) starting from a parsimony
     /// reconstruction of the ancestral sequences at the internal nodes of the tree.
-    /// It then iteratively re-estimates the ancestral sequences at the internal nodes of the tree
-    /// until convergence and, optionally ([`TKFIndelInf::estimate_homology_paths_from_initial`]).
+    /// It then [`iteratively re-estimates`](TKFIndelInf::estimate_homology_paths_from_initial)
+    /// the ancestral sequences at the internal nodes of the tree until convergence.
     pub fn estimate_homology_paths<A: Alignment, AA: AncestralAlignment>(
         &self,
         phylo: PhyloInfo<A>,
@@ -173,7 +173,7 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
     }
 
     /// Estimates the homology paths (ancestral gap/non-gap patterns) starting from an initial guess
-    /// of the ancestral sequences at the internal nodes of the tree.
+    /// of the homology paths.
     pub fn estimate_homology_paths_from_initial<AA: AncestralAlignment>(
         &self,
         phylo: PhyloInfo<AA>,
@@ -221,7 +221,7 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
     }
 
     /// Re-estimates the ancestral sequences at all non-root internal nodes of the tree,
-    /// keeping all other sequences and the tree fixed.
+    /// keeping all other sequences (i.e., leaf sequences) and the tree fixed.
     fn reestimate_edges<AA: AncestralAlignment>(
         cost: &mut TKFIndelCost<T, AA>,
         rng: &mut RandomGenerator<R>,
