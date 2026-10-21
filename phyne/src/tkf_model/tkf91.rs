@@ -8,7 +8,7 @@ use crate::likelihood::ParamRange;
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
-    validate_lambda_mu, validate_tkf_params, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
+    valid_lambda_mu, valid_num_tkf_params, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
 };
 use crate::Result;
 
@@ -33,8 +33,8 @@ impl TKF91IndelModel {
     /// Validates the parameters and returns an error if they are invalid:
     /// 0 < lambda < mu < infinity.
     pub fn new(params: &[f64]) -> Result<Self> {
-        validate_tkf_params(params, TKF91_PARAM_COUNT, "TKF91", "lambda, mu")?;
-        validate_lambda_mu(
+        valid_num_tkf_params(params, TKF91_PARAM_COUNT, "TKF91", "lambda, mu")?;
+        valid_lambda_mu(
             params[usize::from(TKF91Parameters::Lambda)],
             params[usize::from(TKF91Parameters::Mu)],
         )?;
@@ -147,21 +147,36 @@ mod private_tests {
         let err = TKF91IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Expected 2 parameters for TKF91 model")
+            Error::Tkf(msg) if msg.contains("Expected 2 parameters (lambda, mu) for TKF91 model")
         );
     }
 
     #[rstest]
-    #[case::zero_lambda(&[0.0, 1.0])]
-    #[case::zero_mu(&[0.5, 0.0])]
-    #[case::negative_lambda(&[-0.5, 1.0])]
-    #[case::nan_lambda(&[f64::NAN, 1.0])]
-    #[case::infinite_mu(&[0.5, f64::INFINITY])]
-    fn tkf91_indel_model_new_non_positive_or_non_finite(#[case] params: &[f64]) {
+    #[case::zero(&[0.0, 1.0])]
+    #[case::negative(&[-0.5, 1.0])]
+    #[case::nan(&[f64::NAN, 1.0])]
+    #[case::positive_infinite(&[f64::INFINITY, 1.0])]
+    #[case::negative_infinite(&[f64::NEG_INFINITY, 1.0])]
+    fn tkf91_indel_model_new_invalid_lambda(#[case] params: &[f64]) {
         let err = TKF91IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("must be positive non-nan and not infinite")
+            Error::Tkf(msg)
+                if msg.contains("Parameter lambda must be positive, finite and non-nan")
+        );
+    }
+
+    #[rstest]
+    #[case::zero(&[0.5, 0.0])]
+    #[case::negative(&[0.5, -1.0])]
+    #[case::nan(&[0.5, f64::NAN])]
+    #[case::positive_infinite(&[0.5, f64::INFINITY])]
+    #[case::negative_infinite(&[0.5, f64::NEG_INFINITY])]
+    fn tkf91_indel_model_new_invalid_mu(#[case] params: &[f64]) {
+        let err = TKF91IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("Parameter mu must be positive, finite and non-nan")
         );
     }
 

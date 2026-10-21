@@ -10,8 +10,7 @@ use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
-    validate_lambda_mu, validate_r, validate_tkf_params, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
-    DEFAULT_R,
+    valid_lambda_mu, valid_num_tkf_params, valid_r, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
 };
 use crate::Result;
 
@@ -41,12 +40,12 @@ impl TKF92IndelModel {
     /// Validates the parameters and returns an error if they are invalid:
     /// 0 < lambda < mu < infinity, 0 < r < 1.
     pub fn new(params: &[f64]) -> Result<Self> {
-        validate_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
-        validate_lambda_mu(
+        valid_num_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
+        valid_lambda_mu(
             params[usize::from(TKF92Parameters::Lambda)],
             params[usize::from(TKF92Parameters::Mu)],
         )?;
-        validate_r(params[usize::from(TKF92Parameters::R)])?;
+        valid_r(params[usize::from(TKF92Parameters::R)])?;
         let r = params[usize::from(TKF92Parameters::R)];
         Ok(Self {
             params: params.to_vec(),
@@ -229,23 +228,37 @@ mod private_tests {
         let err = TKF92IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Expected 3 parameters for TKF92 model")
+            Error::Tkf(msg)
+                if msg.contains("Expected 3 parameters (lambda, mu, r) for TKF92 model")
         );
     }
 
     #[rstest]
-    #[case::zero_lambda(&[0.0, 1.0, 0.3])]
-    #[case::zero_mu(&[0.5, 0.0, 0.3])]
-    #[case::zero_r(&[0.5, 1.0, 0.0])]
-    #[case::negative_lambda(&[-0.5, 1.0, 0.3])]
-    #[case::nan_lambda(&[f64::NAN, 1.0, 0.3])]
-    #[case::infinite_mu(&[0.5, f64::INFINITY, 0.3])]
-    #[case::infinite_r(&[0.5, 1.0, f64::INFINITY])]
-    fn tkf92_indel_model_new_non_positive_or_non_finite(#[case] params: &[f64]) {
+    #[case::zero(&[0.0, 1.0, 0.3])]
+    #[case::negative(&[-0.5, 1.0, 0.3])]
+    #[case::nan(&[f64::NAN, 1.0, 0.3])]
+    #[case::positive_infinite(&[f64::INFINITY, 1.0, 0.3])]
+    #[case::negative_infinite(&[f64::NEG_INFINITY, 1.0, 0.3])]
+    fn tkf92_indel_model_new_invalid_lambda(#[case] params: &[f64]) {
         let err = TKF92IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("must be positive non-nan and not infinite")
+            Error::Tkf(msg)
+                if msg.contains("Parameter lambda must be positive, finite and non-nan")
+        );
+    }
+
+    #[rstest]
+    #[case::zero(&[0.5, 0.0, 0.3])]
+    #[case::negative(&[0.5, -1.0, 0.3])]
+    #[case::nan(&[0.5, f64::NAN, 0.3])]
+    #[case::positive_infinite(&[0.5, f64::INFINITY, 0.3])]
+    #[case::negative_infinite(&[0.5, f64::NEG_INFINITY, 0.3])]
+    fn tkf92_indel_model_new_invalid_mu(#[case] params: &[f64]) {
+        let err = TKF92IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("Parameter mu must be positive, finite and non-nan")
         );
     }
 
@@ -261,9 +274,13 @@ mod private_tests {
     }
 
     #[rstest]
-    // the case where r <= 0 is already covered by the non-positive test above
-    #[case::r_eq_one(&[0.5, 1.0, 1.0])]
-    #[case::r_gt_one(&[0.5, 1.0, 1.5])]
+    #[case::zero(&[0.5, 1.0, 0.0])]
+    #[case::negative(&[0.5, 1.0, -0.3])]
+    #[case::nan(&[0.5, 1.0, f64::NAN])]
+    #[case::positive_infinite(&[0.5, 1.0, f64::INFINITY])]
+    #[case::negative_infinite(&[0.5, 1.0, f64::NEG_INFINITY])]
+    #[case::eq_one(&[0.5, 1.0, 1.0])]
+    #[case::gt_one(&[0.5, 1.0, 1.5])]
     fn tkf92_indel_model_new_invalid_r(#[case] params: &[f64]) {
         let err = TKF92IndelModel::new(params).unwrap_err();
         assert_matches!(

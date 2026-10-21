@@ -7,9 +7,8 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, merge_fragmentation_with_blocks, validate_fragmentation,
-    validate_lambda_mu, validate_r, validate_tkf_params, TKF92Parameters, TKFIndelCost,
-    TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R, TKF92_PARAM_COUNT,
+    blocks_of_alignment, merge_fragmentation_with_blocks, valid_r, validate_fragmentation,
+    TKF92Parameters, TKFIndelCost, TKFIndelModelInfo, TKFModel, TKF92_PARAM_COUNT,
 };
 use crate::Result;
 
@@ -32,18 +31,6 @@ pub struct TKF92IndelModelAddBlocks {
 impl TKF92IndelModelAddBlocks {
     pub fn r(&self) -> f64 {
         self.params[usize::from(TKF92Parameters::R)]
-    }
-}
-
-impl Default for TKF92IndelModelAddBlocks {
-    fn default() -> Self {
-        let r = DEFAULT_R;
-        Self {
-            params: vec![DEFAULT_LAMBDA, DEFAULT_MU, r],
-            ln_r: r.ln(),
-            ln_one_minus_r_over_r: (-r).ln_1p() - r.ln(),
-            additional_blocks: vec![],
-        }
     }
 }
 
@@ -137,13 +124,20 @@ impl<AA: AncestralAlignment> TKF92IndelAddBlocksCostBuilder<AA> {
     }
 
     pub fn build(self) -> Result<TKFIndelCost<TKF92IndelModelAddBlocks, AA>> {
+        use crate::tkf_model::{valid_lambda_mu, valid_num_tkf_params};
+
         let params = self.params;
-        validate_tkf_params(&params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
-        validate_lambda_mu(
+        valid_num_tkf_params(
+            &params,
+            TKF92_PARAM_COUNT,
+            "TKF92-fixed-fragmentation",
+            "lambda, mu, r",
+        )?;
+        valid_lambda_mu(
             params[usize::from(TKF92Parameters::Lambda)],
             params[usize::from(TKF92Parameters::Mu)],
         )?;
-        validate_r(params[usize::from(TKF92Parameters::R)])?;
+        valid_r(params[usize::from(TKF92Parameters::R)])?;
         validate_fragmentation(&self.additional_blocks, self.phylo.msa.len())?;
         let r = params[usize::from(TKF92Parameters::R)];
         let model = TKF92IndelModelAddBlocks {

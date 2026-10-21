@@ -9,9 +9,8 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, validate_lambda_mu, validate_r, validate_tkf_params, TKF92Parameters,
-    TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
-    TKF92_PARAM_COUNT,
+    blocks_of_alignment, valid_lambda_mu, valid_num_tkf_params, valid_r, TKF92Parameters,
+    TKFIndelCost, TKFIndelModelInfo, TKFModel, TKF92_PARAM_COUNT,
 };
 use crate::{bail, Result};
 
@@ -36,12 +35,12 @@ impl TKF92FixedIndelModel {
     }
 
     pub fn new(params: &[f64], fragmentation: Vec<usize>) -> Result<Self> {
-        validate_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
-        validate_lambda_mu(
+        valid_num_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
+        valid_lambda_mu(
             params[usize::from(TKF92Parameters::Lambda)],
             params[usize::from(TKF92Parameters::Mu)],
         )?;
-        validate_r(params[usize::from(TKF92Parameters::R)])?;
+        valid_r(params[usize::from(TKF92Parameters::R)])?;
         let ln_r = params[usize::from(TKF92Parameters::R)].ln();
         Ok(Self {
             params: params.to_vec(),
@@ -103,17 +102,6 @@ impl TKFModel for TKF92FixedIndelModel {
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
         let alignment_blocks = blocks_of_alignment(msa);
         merge_fragmentation_with_blocks(&self.fragmentation, &alignment_blocks)
-    }
-}
-
-impl Default for TKF92FixedIndelModel {
-    fn default() -> Self {
-        let r = DEFAULT_R;
-        Self {
-            params: vec![DEFAULT_LAMBDA, DEFAULT_MU, r],
-            ln_r: r.ln(),
-            fragmentation: vec![],
-        }
     }
 }
 

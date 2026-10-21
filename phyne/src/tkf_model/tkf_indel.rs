@@ -25,38 +25,40 @@ pub(super) static DEFAULT_LAMBDA: f64 = 1.0;
 pub(super) static DEFAULT_MU: f64 = 1.1;
 pub(super) static DEFAULT_R: f64 = 0.5;
 
-/// Validates the number of parameters and checks that all of them are positive, finite and
-/// non-NaN for a TKF model.
-pub(super) fn validate_tkf_params(
+pub(super) fn valid_num_tkf_params(
     params: &[f64],
     expected_len: usize,
-    model_name: &str,
+    name: &str,
     param_names: &str,
 ) -> Result<()> {
     if params.len() != expected_len {
         bail!(
             Tkf,
-            "Expected {} parameters for {} model ({}), but got {}",
+            "Expected {} parameters ({}) for {} model, but got {}",
             expected_len,
-            model_name,
             param_names,
+            name,
             params.len()
-        );
-    }
-
-    if params.iter().any(|p| !p.is_finite() || *p <= 0.0) {
-        bail!(
-            Tkf,
-            "All parameters for {} model must be positive non-nan and not infinite, but got {:?}",
-            model_name,
-            params
         );
     }
     Ok(())
 }
 
-/// Validates that the TKF model parameters satisfy lambda < mu.
-pub(super) fn validate_lambda_mu(lambda: f64, mu: f64) -> Result<()> {
+pub(super) fn valid_lambda_mu(lambda: f64, mu: f64) -> Result<()> {
+    if !lambda.is_finite() || lambda <= 0.0 {
+        bail!(
+            Tkf,
+            "Parameter lambda must be positive, finite and non-nan, but got lambda = {}",
+            lambda
+        );
+    }
+    if !mu.is_finite() || mu <= 0.0 {
+        bail!(
+            Tkf,
+            "Parameter mu must be positive, finite and non-nan, but got mu = {}",
+            mu
+        );
+    }
     if lambda >= mu {
         bail!(
             Tkf,
@@ -68,10 +70,9 @@ pub(super) fn validate_lambda_mu(lambda: f64, mu: f64) -> Result<()> {
     Ok(())
 }
 
-/// Validates that the TKF92 parameter r is in (0, 1). Assumes that r has already been checked
-/// to be positive, e.g. by [`validate_tkf_params`].
-pub(super) fn validate_r(r: f64) -> Result<()> {
-    if r >= 1.0 {
+/// Validates that the TKF92 parameter r is in (0, 1).
+pub(super) fn valid_r(r: f64) -> Result<()> {
+    if r.is_nan() || r <= 0.0 || r >= 1.0 {
         bail!(Tkf, "Parameter r must be in (0, 1), but got r = {}", r);
     }
     Ok(())
