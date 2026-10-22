@@ -73,8 +73,9 @@ where
 impl<T: TKFModel + Default> Default for TKFIndelInf<T, Pcg32> {
     /// Creates a new [`TKFIndelInf`] with default attributes.
     ///
-    /// It uses the default [`TKFModel`] implementation for the indel model, a default epsilon of
-    /// [`DEFAULT_EPSILON`], no maximum number of iterations, and no parameter optimisation.
+    /// It uses the default [`TKFModel`] implementation for the indel model and optimises
+    /// its parameters during the inference process. It uses the [`DEFAULT_EPSILON`]
+    /// and no limit on the number of iterations.
     /// The `rng` is seeded with a random seed and is used for breaking ties in the re-estimation
     /// dynamic programming process. It advances across iterations, so the results are not
     /// reproducible across different runs of the same code. For reproducible results, use
@@ -83,7 +84,7 @@ impl<T: TKFModel + Default> Default for TKFIndelInf<T, Pcg32> {
         Self {
             epsilon: DEFAULT_EPSILON,
             max_iterations: None,
-            param_opt: IndelInfParamOpt::Disabled,
+            param_opt: IndelInfParamOpt::Enabled,
             indel_model: T::default(),
             rng: RefCell::new(DefaultGenerator::default()),
         }
