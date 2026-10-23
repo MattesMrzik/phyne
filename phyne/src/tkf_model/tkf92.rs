@@ -10,7 +10,7 @@ use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
-    valid_lambda_mu, valid_r, valid_num_tkf_params, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
+    valid_lambda_mu, valid_num_tkf_params, valid_r, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
 };
 use crate::Result;
 
