@@ -9,7 +9,7 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, valid_lambda_mu, valid_num_tkf_params, valid_r, TKF92Parameters,
+    blocks_of_alignment, valid_lambda_mu, valid_number_tkf_params, valid_r, TKF92Parameters,
     TKFIndelCost, TKFIndelModelInfo, TKFModel, TKF92_PARAM_COUNT,
 };
 use crate::{bail, Result};
@@ -35,7 +35,7 @@ impl TKF92FixedIndelModel {
     }
 
     pub fn new(params: &[f64], fragmentation: Vec<usize>) -> Result<Self> {
-        valid_num_tkf_params("TKF92", "lambda, mu, r", params, TKF92_PARAM_COUNT)?;
+        valid_number_tkf_params("TKF92", "lambda, mu, r", params, TKF92_PARAM_COUNT)?;
         valid_lambda_mu(
             params[usize::from(TKF92Parameters::Lambda)],
             params[usize::from(TKF92Parameters::Mu)],

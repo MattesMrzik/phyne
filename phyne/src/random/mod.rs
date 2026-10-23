@@ -37,7 +37,7 @@ where
 }
 
 /// Note: Pcg32 is not the most secure RNG, but is fast and suitable for most phylogenetic applications.
-/// Additionally, Pcg32 which is platform-independent
+/// Additionally, Pcg32 is platform-independent
 pub type DefaultRng = Pcg32;
 
 /// Type alias for the default RNG implementation which uses [`DefaultRng`].

@@ -26,7 +26,7 @@ pub(super) static DEFAULT_MU: f64 = 1.1;
 pub(super) static DEFAULT_R: f64 = 0.5;
 
 /// Bails if an incorrect number of parameters are provided for the given model.
-pub(super) fn valid_num_tkf_params(
+pub(super) fn valid_number_tkf_params(
     model_name: &str,
     param_names: &str,
     params: &[f64],

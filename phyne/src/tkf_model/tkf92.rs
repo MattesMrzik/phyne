@@ -10,7 +10,8 @@ use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
-    valid_lambda_mu, valid_num_tkf_params, valid_r, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU, DEFAULT_R,
+    valid_lambda_mu, valid_number_tkf_params, valid_r, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
+    DEFAULT_R,
 };
 use crate::Result;
 
@@ -40,7 +41,7 @@ impl TKF92IndelModel {
     /// Validates the parameters and returns an error if they are invalid:
     /// 0 < lambda < mu < infinity, 0 < r < 1.
     pub fn new(params: &[f64]) -> Result<Self> {
-        valid_num_tkf_params("TKF92", "lambda, mu, r", params, TKF92_PARAM_COUNT)?;
+        valid_number_tkf_params("TKF92", "lambda, mu, r", params, TKF92_PARAM_COUNT)?;
         valid_lambda_mu(
             params[usize::from(TKF92Parameters::Lambda)],
             params[usize::from(TKF92Parameters::Mu)],

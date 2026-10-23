@@ -7,7 +7,7 @@ use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, merge_fragmentation_with_blocks, valid_lambda_mu, valid_num_tkf_params,
+    blocks_of_alignment, merge_fragmentation_with_blocks, valid_lambda_mu, valid_number_tkf_params,
     valid_r, validate_fragmentation, TKF92Parameters, TKFIndelCost, TKFIndelModelInfo, TKFModel,
     TKF92_PARAM_COUNT,
 };
@@ -126,7 +126,7 @@ impl<AA: AncestralAlignment> TKF92IndelAddBlocksCostBuilder<AA> {
 
     pub fn build(self) -> Result<TKFIndelCost<TKF92IndelModelAddBlocks, AA>> {
         let params = self.params;
-        valid_num_tkf_params(
+        valid_number_tkf_params(
             "TKF92-fixed-fragmentation",
             "lambda, mu, r",
             &params,
