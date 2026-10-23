@@ -18,7 +18,9 @@ use crate::substitution_models::{
     dna_models::*, protein_models::*, QMatrix, SubstModel, SubstitutionCost,
     SubstitutionCostBuilder as SCB,
 };
-use crate::tkf_model::{blocks_of_alignment, TKF92CostBuilder, TKF92IndelAddBlocksCostBuilder};
+use crate::tkf_model::{
+    blocks_of_alignment, TKF92IndelAddBlocksCostBuilder, TKF92IndelModel, TKFCostBuilder,
+};
 use crate::{record_wo_desc as record, tree};
 
 // Macros for tests where precomputed results can be used to speed up local testing
@@ -917,7 +919,8 @@ fn tkf92_topo_opti() {
     let lambda = 0.1;
     let mu = 0.2;
     let r = 0.3;
-    let tkf_cost = TKF92CostBuilder::new(&[lambda, mu, r], subst_model.clone(), phylo.clone())
+    let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+    let tkf_cost = TKFCostBuilder::new(subst_model.clone(), tkf_indel_model, phylo.clone())
         .build()
         .unwrap();
     let unopt_cost = tkf_cost.cost();

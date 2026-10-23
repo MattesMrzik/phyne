@@ -1,23 +1,21 @@
-use std::cell::RefCell;
 use std::fmt::Display;
 
 use hashbrown::HashSet;
-use log::warn;
 use num_enum::{FromPrimitive, IntoPrimitive};
 use rand::{Rng, SeedableRng};
 use rand_distr::Geometric;
 
 use crate::alignment::AncestralAlignment;
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
-use crate::phylo_info::PhyloInfo;
 use crate::random::RandomGenerator;
-use crate::substitution_models::{QMatrix, SubstModel, SubstitutionCostBuilder as SCB};
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
 use crate::tkf_model::{
-    validate_lambda_mu, TKFCost, TKFIndelCost, TKFIndelModelInfo, TKFModel, DEFAULT_LAMBDA,
-    DEFAULT_MU, DEFAULT_R,
+    valid_lambda_mu, valid_number_tkf_params, valid_r, TKFModel, DEFAULT_LAMBDA, DEFAULT_MU,
+    DEFAULT_R,
 };
 use crate::Result;
+
+pub const TKF92_PARAM_COUNT: usize = 3;
 
 #[derive(Debug, Eq, PartialEq, FromPrimitive, IntoPrimitive)]
 #[repr(usize)]
@@ -39,20 +37,26 @@ pub struct TKF92IndelModel {
 }
 
 impl TKF92IndelModel {
-    pub fn r(&self) -> f64 {
-        self.params[usize::from(TKF92Parameters::R)]
-    }
-
-    pub fn new(lambda: f64, mu: f64, r: f64) -> Self {
-        let mut params = vec![lambda, mu, r];
-        validate_lambda_mu(&mut params);
-        validate_r(&mut params);
+    /// Creates a new TKF92 model given parameters: lambda, mu, r.
+    /// Validates the parameters and returns an error if they are invalid:
+    /// 0 < lambda < mu < infinity, 0 < r < 1.
+    pub fn new(params: &[f64]) -> Result<Self> {
+        valid_number_tkf_params("TKF92", "lambda, mu, r", params, TKF92_PARAM_COUNT)?;
+        valid_lambda_mu(
+            params[usize::from(TKF92Parameters::Lambda)],
+            params[usize::from(TKF92Parameters::Mu)],
+        )?;
+        valid_r(params[usize::from(TKF92Parameters::R)])?;
         let r = params[usize::from(TKF92Parameters::R)];
-        Self {
-            params,
+        Ok(Self {
+            params: params.to_vec(),
             ln_r: r.ln(),
             ln_one_minus_r_over_r: ((1.0 - r) / r).ln(),
-        }
+        })
+    }
+
+    pub fn r(&self) -> f64 {
+        self.params[usize::from(TKF92Parameters::R)]
     }
 }
 
@@ -168,101 +172,6 @@ impl ExpectedRootLength for TKF92IndelModel {
     }
 }
 
-/// Validates the TKF92 parameter `r`. If it is not valid, it is set to
-/// its default value and a warning is logged.
-/// Returns valid `r`.
-pub(super) fn validate_r(params: &mut [f64]) {
-    let r_id = usize::from(TKF92Parameters::R);
-    let r = params[r_id];
-    if r == 0.0 {
-        params[r_id] = DEFAULT_R;
-        warn!(
-            "Tried to set r to invalid value 0. \
-            It must be in (0, 1). Setting r to {}. \
-            Hint: r = 0 yields special case: TKF91 model, consider using that instead.",
-            params[r_id]
-        );
-    } else if r <= 0.0 || r >= 1.0 {
-        params[r_id] = DEFAULT_R;
-        warn!(
-            "Tried to set r to invalid value {r}. \
-            It must be in (0, 1). Setting r to {}.",
-            params[r_id]
-        );
-    }
-}
-
-/// Builder for the cost using the [`TKF92IndelModel`], i.e., without a substitution model.
-pub struct TKF92IndelCostBuilder<AA: AncestralAlignment> {
-    params: Vec<f64>,
-    phylo: PhyloInfo<AA>,
-}
-
-impl<AA: AncestralAlignment> TKF92IndelCostBuilder<AA> {
-    pub fn new(params: &[f64], phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            phylo,
-        }
-    }
-
-    pub fn build(self) -> Result<TKFIndelCost<TKF92IndelModel, AA>> {
-        let mut params = self.params;
-        if params.len() != 3 {
-            warn!(
-                "Expected 3 parameters for TKF92 model (lambda, mu, r), but got {}",
-                params.len()
-            );
-            warn!("Falling back to default values");
-            params.resize(3, 0.0);
-            params[usize::from(TKF92Parameters::Lambda)] = DEFAULT_LAMBDA;
-            params[usize::from(TKF92Parameters::Mu)] = DEFAULT_MU;
-            params[usize::from(TKF92Parameters::R)] = DEFAULT_R;
-        } else {
-            validate_lambda_mu(&mut params);
-            validate_r(&mut params);
-        }
-        let r = params[usize::from(TKF92Parameters::R)];
-        let model = TKF92IndelModel {
-            params,
-            ln_r: r.ln(),
-            ln_one_minus_r_over_r: ((1.0 - r) / r).ln(),
-        };
-        let info = TKFIndelModelInfo::new(&model, &self.phylo);
-        Ok(TKFIndelCost {
-            model,
-            phylo: self.phylo.clone(),
-            model_info: RefCell::new(info),
-        })
-    }
-}
-
-/// Builder for the TKF92 cost, i.e., with a substitution model.
-pub struct TKF92CostBuilder<Q: QMatrix, AA: AncestralAlignment> {
-    params: Vec<f64>,
-    subst_model: SubstModel<Q>,
-    phylo: PhyloInfo<AA>,
-}
-
-impl<Q: QMatrix, AA: AncestralAlignment> TKF92CostBuilder<Q, AA> {
-    pub fn new(params: &[f64], subst_model: SubstModel<Q>, phylo: PhyloInfo<AA>) -> Self {
-        Self {
-            params: params.to_vec(),
-            subst_model,
-            phylo,
-        }
-    }
-
-    pub fn build(self) -> Result<TKFCost<Q, TKF92IndelModel, AA>> {
-        let indel_cost = TKF92IndelCostBuilder::new(&self.params, self.phylo.clone()).build()?;
-        let subst_cost = SCB::new(self.subst_model, self.phylo).build()?;
-        Ok(TKFCost {
-            indel_cost,
-            subst_cost,
-        })
-    }
-}
-
 /// Determines the block borders from the alignment. A block border is defined as a
 /// position where any sequence changes from gap to non-gap or vice versa. Returns a sorted
 /// vector of the right exclusive block borders.
@@ -295,7 +204,91 @@ pub(crate) fn blocks_of_alignment<AA: AncestralAlignment>(msa: &AA) -> Vec<usize
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod private_tests {
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    use crate::Error;
+
     use super::*;
+
+    #[test]
+    fn tkf92_indel_model_new_success() {
+        let model = TKF92IndelModel::new(&[0.5, 1.0, 0.3]).unwrap();
+        assert_eq!(model.lambda(), 0.5);
+        assert_eq!(model.mu(), 1.0);
+        assert_eq!(model.r(), 0.3);
+        assert_eq!(model.params(), &[0.5, 1.0, 0.3]);
+        assert_eq!(model.ln_r, 0.3f64.ln());
+        assert_eq!(model.ln_one_minus_r_over_r, ((1.0f64 - 0.3) / 0.3).ln());
+    }
+
+    #[rstest]
+    #[case::too_few(&[0.5, 1.0])]
+    #[case::too_many(&[0.5, 1.0, 0.3, 2.0])]
+    fn tkf92_indel_model_new_wrong_param_count(#[case] params: &[f64]) {
+        let err = TKF92IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg)
+                if msg.contains("TKF92: expected 3 parameters (lambda, mu, r), got")
+        );
+    }
+
+    #[rstest]
+    #[case::zero(&[0.0, 1.0, 0.3])]
+    #[case::negative(&[-0.5, 1.0, 0.3])]
+    #[case::nan(&[f64::NAN, 1.0, 0.3])]
+    #[case::positive_infinite(&[f64::INFINITY, 1.0, 0.3])]
+    #[case::negative_infinite(&[f64::NEG_INFINITY, 1.0, 0.3])]
+    fn tkf92_indel_model_new_invalid_lambda(#[case] params: &[f64]) {
+        let err = TKF92IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg)
+                if msg.contains("parameter lambda must be positive, finite and non-nan")
+        );
+    }
+
+    #[rstest]
+    #[case::zero(&[0.5, 0.0, 0.3])]
+    #[case::negative(&[0.5, -1.0, 0.3])]
+    #[case::nan(&[0.5, f64::NAN, 0.3])]
+    #[case::positive_infinite(&[0.5, f64::INFINITY, 0.3])]
+    #[case::negative_infinite(&[0.5, f64::NEG_INFINITY, 0.3])]
+    fn tkf92_indel_model_new_invalid_mu(#[case] params: &[f64]) {
+        let err = TKF92IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("parameter mu must be positive, finite and non-nan")
+        );
+    }
+
+    #[rstest]
+    #[case::lambda_eq_mu(&[1.0, 1.0, 0.3])]
+    #[case::lambda_gt_mu(&[2.0, 1.0, 0.3])]
+    fn tkf92_indel_model_new_lambda_ge_mu(#[case] params: &[f64]) {
+        let err = TKF92IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("parameter lambda must be less than mu")
+        );
+    }
+
+    #[rstest]
+    #[case::zero(&[0.5, 1.0, 0.0])]
+    #[case::negative(&[0.5, 1.0, -0.3])]
+    #[case::nan(&[0.5, 1.0, f64::NAN])]
+    #[case::positive_infinite(&[0.5, 1.0, f64::INFINITY])]
+    #[case::negative_infinite(&[0.5, 1.0, f64::NEG_INFINITY])]
+    #[case::eq_one(&[0.5, 1.0, 1.0])]
+    #[case::gt_one(&[0.5, 1.0, 1.5])]
+    fn tkf92_indel_model_new_invalid_r(#[case] params: &[f64]) {
+        let err = TKF92IndelModel::new(params).unwrap_err();
+        assert_matches!(
+            err,
+            Error::Tkf(msg) if msg.contains("parameter r must be in (0, 1)")
+        );
+    }
 
     #[test]
     #[should_panic]

@@ -159,7 +159,7 @@ struct BackTrackingResult {
 /// use phyne::alignment::AncestralAlignment;
 /// use phyne::phylo_info::PhyloInfoBuilder;
 /// use phyne::random::DefaultGenerator;
-/// use phyne::tkf_model::{EdgeSeqsReestimator, TKF92IndelCostBuilder};
+/// use phyne::tkf_model::{EdgeSeqsReestimator, TKF92IndelModel, TKFIndelCostBuilder};
 /// use phyne::tree::NodeIdx::{Internal, Leaf};
 /// // Re-estimation for ASR refinement.
 /// // The alignment below includes ancestral sequences for which the indel points will be refined.
@@ -170,8 +170,8 @@ struct BackTrackingResult {
 /// let lambda = 0.9;
 /// let mu = 1.0;
 /// let r = 0.5;
-/// let mut tkf92_indel_cost = TKF92IndelCostBuilder::new(&[lambda, mu, r], phylo)
-///     .build()?;
+/// let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r])?;
+/// let mut tkf92_indel_cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
 /// let mut rng = DefaultGenerator::default();
 /// let mut reestimator = EdgeSeqsReestimator::new(&mut tkf92_indel_cost, &mut rng);
 ///
@@ -740,7 +740,9 @@ mod private_tests {
     use crate::alphabets::Alphabet;
     use crate::phylo_info::PhyloInfoBuilder;
     use crate::random::{DefaultGenerator, FakeGenerator, FakeRng};
-    use crate::tkf_model::{tests::setup_test_phylo, EdgeSeqsReestimator, TKF92IndelCostBuilder};
+    use crate::tkf_model::{
+        tests::setup_test_phylo, EdgeSeqsReestimator, TKF92IndelModel, TKFIndelCostBuilder,
+    };
     use crate::{record_wo_desc as record, tree};
 
     use super::*;
@@ -826,9 +828,8 @@ mod private_tests {
         #[case] expected_events: QuartetEvents,
     ) {
         let phylo = setup_test_phylo(Alphabet::dna());
-        let mut cost = TKF92IndelCostBuilder::new(&[0.4, 0.5, 0.8], phylo)
-            .build()
-            .unwrap();
+        let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8]).unwrap();
+        let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
         let rng = &mut FakeGenerator::default();
         let v2_idx = cost.phylo.tree.by_id("I3").idx;
         let mut reestimator = EdgeSeqsReestimator::new(&mut cost, rng);
@@ -842,9 +843,8 @@ mod private_tests {
     fn tkf_backtrack() {
         let phylo = setup_test_phylo(Alphabet::dna());
         // the parameters here do not matter for the backtracking test
-        let mut cost = TKF92IndelCostBuilder::new(&[0.4, 0.5, 0.8], phylo)
-            .build()
-            .unwrap();
+        let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8]).unwrap();
+        let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
         // FakeRng such that we can test tie-breaking (max value in last column) in backtracking
         let rng = &mut FakeGenerator::from_rng(FakeRng::from_f64_values(vec![0.1, 0.2]));
 
@@ -918,11 +918,9 @@ mod private_tests {
             tree,
         )
         .unwrap();
-        let mut cost = TKF92IndelCostBuilder::new(&[0.4, 0.5, 0.8], phylo)
-            .build()
-            .unwrap();
-        let logl = cost.logl(); // must be called to initialize the model_info, which is
-                                // needed for const_per_alignment().
+        let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8]).unwrap();
+        let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
+        let logl = cost.logl(); // must be called to initialize the model_info, which is needed for const_per_alignment().
         let rng = &mut DefaultGenerator::default();
         let reestimator = EdgeSeqsReestimator::new(&mut cost, rng);
         assert_eq!(reestimator.const_per_alignment(), logl);
@@ -931,10 +929,8 @@ mod private_tests {
     #[test]
     fn tkf_remove_and_add_back_quartet() {
         let phylo = setup_test_phylo(Alphabet::dna());
-        let mut cost = TKF92IndelCostBuilder::new(&[0.4, 0.5, 0.8], phylo)
-            .build()
-            .unwrap();
-
+        let tkf_indel_model = TKF92IndelModel::new(&[0.4, 0.5, 0.8]).unwrap();
+        let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
         let rng = &mut DefaultGenerator::default();
         let mut reestimator = EdgeSeqsReestimator::new(&mut cost, rng);
         let original_logl = reestimator.cost.logl();
@@ -956,9 +952,8 @@ mod private_tests {
             .build_with_ancestors()
             .unwrap();
 
-        let mut cost = TKF92IndelCostBuilder::new(&[1.0, 2.0, 0.3], phylo)
-            .build()
-            .unwrap();
+        let tkf_indel_model = TKF92IndelModel::new(&[1.0, 2.0, 0.3]).unwrap();
+        let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
         let rng = &mut DefaultGenerator::default();
         let mut reestimator = EdgeSeqsReestimator::new(&mut cost, rng);
         let original_logl = reestimator.cost.logl();
@@ -988,9 +983,8 @@ mod private_tests {
             .build_with_ancestors()
             .unwrap();
 
-        let mut cost = TKF92IndelCostBuilder::new(&[1.0, 2.0, 0.3], phylo)
-            .build()
-            .unwrap();
+        let tkf_indel_model = TKF92IndelModel::new(&[1.0, 2.0, 0.3]).unwrap();
+        let mut cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
         let rng = &mut DefaultGenerator::default();
         let mut reestimator = EdgeSeqsReestimator::new(&mut cost, rng);
         let original_logl = reestimator.cost.logl();
