@@ -1,9 +1,7 @@
 use std::cell::RefCell;
-use std::num::NonZeroUsize;
 
 use log::info;
 use rand::{Rng, SeedableRng};
-use rand_pcg::Pcg32;
 
 use crate::alignment::{Alignment, AncestralAlignment};
 use crate::asr::AncestralSequenceReconstruction;
@@ -12,10 +10,10 @@ use crate::likelihood::ModelSearchCost;
 use crate::optimisers::{ModelOptimiser, StopCondition};
 use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
 use crate::phylo_info::PhyloInfo;
-use crate::random::{DefaultGenerator, RandomGenerator};
+use crate::random::{DefaultGenerator, DefaultRng, RandomGenerator};
 use crate::tkf_model::{EdgeSeqsReestimator, TKFIndelCost, TKFIndelCostBuilder, TKFModel};
 use crate::tree::NodeIdx;
-use crate::{bail, Result, DEFAULT_EPSILON};
+use crate::Result;
 
 /// Options for whether to optimise the [`indel model`](TKFModel) parameters during the
 /// [`TKFIndelInf`] inference process.
@@ -56,13 +54,12 @@ pub enum IndelInfParamOpt {
 /// assert_eq!(result.phylo.msa.ancestral_seqs().len(), 2);
 /// # Ok(()) }
 /// ```
-pub struct TKFIndelInf<T, R = Pcg32>
+pub struct TKFIndelInf<T, R = DefaultRng>
 where
     T: TKFModel,
     R: Rng + SeedableRng,
 {
-    epsilon: f64,
-    max_iterations: Option<usize>,
+    stop_condition: StopCondition,
     param_opt: IndelInfParamOpt,
     indel_model: T,
     /// It is wrapped in a RefCell to allow interior mutability, as the re-estimation process needs to mutate
@@ -70,7 +67,7 @@ where
     rng: RefCell<RandomGenerator<R>>,
 }
 
-impl<T: TKFModel + Default> Default for TKFIndelInf<T, Pcg32> {
+impl<T: TKFModel + Default> Default for TKFIndelInf<T, DefaultRng> {
     /// Creates a new [`TKFIndelInf`] with default attributes.
     ///
     /// It uses the default [`TKFModel`] implementation for the indel model and optimises
@@ -82,8 +79,7 @@ impl<T: TKFModel + Default> Default for TKFIndelInf<T, Pcg32> {
     /// [`TKFIndelInf::new_with_attr`] and provide your own `rng`.
     fn default() -> Self {
         Self {
-            epsilon: DEFAULT_EPSILON,
-            max_iterations: None,
+            stop_condition: StopCondition::default(),
             param_opt: IndelInfParamOpt::Enabled,
             indel_model: T::default(),
             rng: RefCell::new(DefaultGenerator::default()),
@@ -101,27 +97,12 @@ where
     /// The `rng` is for reproducibility when breaking ties in the re-estimation dynamic programming process.
     pub fn new_with_attr(
         indel_model: T,
-        epsilon: f64,
-        max_iterations: Option<usize>,
+        stop_condition: StopCondition,
         param_opt: IndelInfParamOpt,
         rng: RandomGenerator<R>,
     ) -> Result<Self> {
-        if !epsilon.is_finite() || epsilon <= 0.0 {
-            bail!(Asr, "epsilon must be greater than 0, but got {}", epsilon);
-        }
-
-        if let Some(max_iters) = max_iterations {
-            if max_iters == 0 {
-                bail!(
-                    Asr,
-                    "max_iterations must be greater than 0, but got {}",
-                    max_iters
-                );
-            }
-        }
         Ok(Self {
-            epsilon,
-            max_iterations,
+            stop_condition,
             param_opt,
             indel_model,
             rng: RefCell::new(rng),
@@ -179,9 +160,11 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
         &self,
         phylo: PhyloInfo<AA>,
     ) -> Result<TKFIndelInfResult<T, AA>> {
-        let max_iters = NonZeroUsize::new(self.max_iterations.unwrap_or(usize::MAX)).unwrap();
-        let stop_condition = StopCondition::max_iter_epsilon(max_iters, self.epsilon);
-        let intermediate_stop_condition = StopCondition::epsilon(self.epsilon);
+        let intermediate_stop_condition = match self.stop_condition {
+            StopCondition::Epsilon(e) => StopCondition::epsilon(e),
+            StopCondition::MaxIterEpsilon(_, e) => StopCondition::epsilon(e),
+            _ => StopCondition::default(),
+        };
 
         let mut cost = TKFIndelCostBuilder::new(self.indel_model.clone(), phylo).build();
         let mut prev_cost = f64::NEG_INFINITY;
@@ -189,7 +172,7 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
         let mut delta = curr_cost - prev_cost;
 
         let mut iterations = 0;
-        while stop_condition.should_continue(iterations, delta) {
+        while self.stop_condition.should_continue(iterations, delta) {
             iterations += 1;
             info!("Iteration: {iterations}, current cost: {curr_cost}");
             prev_cost = curr_cost;
@@ -228,12 +211,12 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
         rng: &mut RandomGenerator<R>,
     ) {
         let mut reestimator = EdgeSeqsReestimator::new(cost, rng);
-        for node in reestimator.phylo().tree.postorder().clone() {
-            if node == reestimator.phylo().tree.root {
+        for node_idx in reestimator.phylo().tree.postorder().clone() {
+            if node_idx == reestimator.phylo().tree.root {
                 continue;
             }
-            if let NodeIdx::Internal(_) = node {
-                reestimator.reestimate_unchecked(&node);
+            if let NodeIdx::Internal(_) = node_idx {
+                reestimator.reestimate_unchecked(&node_idx);
             }
         }
     }
@@ -242,7 +225,6 @@ impl<T: TKFModel, R: Rng + SeedableRng> TKFIndelInf<T, R> {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
-    use assert_matches::assert_matches;
 
     use crate::alignment::{Alignment, AncestralAlignment, Sequences, MASA, MSA};
     use crate::asr::AncestralSequenceReconstruction;
@@ -250,38 +232,9 @@ mod tests {
     use crate::parsimony_presence_absence::ParsimonyPresenceAbsence;
     use crate::random::DefaultGenerator;
     use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder, TKFModel};
-    use crate::{record_wo_desc as record, tree, Error, DEFAULT_EPSILON};
+    use crate::{record_wo_desc as record, tree, DEFAULT_EPSILON};
 
     use super::*;
-
-    const MAX_ITERATIONS: Option<usize> = Some(10);
-
-    #[test]
-    fn new_with_attr_fails_for_invalid_attributes() {
-        let err = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
-            TKF92IndelModel::default(),
-            -0.1,
-            MAX_ITERATIONS,
-            IndelInfParamOpt::Disabled,
-            DefaultGenerator::new(123),
-        )
-        .err()
-        .unwrap();
-        assert_matches!(err, Error::Asr(msg)
-            if msg.contains("epsilon must be greater than 0"));
-
-        let err = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
-            TKF92IndelModel::default(),
-            DEFAULT_EPSILON,
-            Some(0),
-            IndelInfParamOpt::Disabled,
-            DefaultGenerator::new(123),
-        )
-        .err()
-        .unwrap();
-        assert_matches!(err, Error::Asr(msg)
-            if msg.contains("max_iterations must be greater than 0"));
-    }
 
     fn setup_msa() -> PhyloInfo<MSA> {
         let tree = tree!("(((A1:2.0,B2:2.0)I3:0.3,C4:2.0)R5:1.0);");
@@ -318,10 +271,10 @@ mod tests {
     #[test]
     fn estimate_homology_paths_without_param_optimisation() {
         let model = TKF92IndelModel::default();
+        let stop_condition = StopCondition::Epsilon(DEFAULT_EPSILON);
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model.clone(),
-            DEFAULT_EPSILON,
-            MAX_ITERATIONS,
+            stop_condition,
             IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
@@ -338,10 +291,10 @@ mod tests {
     #[test]
     fn estimate_homology_paths_with_param_optimisation() {
         let model = TKF92IndelModel::default();
+        let stop_condition = StopCondition::Epsilon(DEFAULT_EPSILON);
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model.clone(),
-            DEFAULT_EPSILON,
-            MAX_ITERATIONS,
+            stop_condition,
             IndelInfParamOpt::Enabled,
             DefaultGenerator::new(123),
         )
@@ -359,10 +312,10 @@ mod tests {
     fn param_optimisation_improves_likelihood() {
         let model = TKF92IndelModel::new(&[0.1, 0.2, 0.3]).unwrap();
 
+        let stop_condition = StopCondition::Epsilon(DEFAULT_EPSILON);
         let inf_no_opt = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model.clone(),
-            DEFAULT_EPSILON,
-            MAX_ITERATIONS,
+            stop_condition,
             IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )
@@ -374,8 +327,7 @@ mod tests {
 
         let inf_opt = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model,
-            DEFAULT_EPSILON,
-            MAX_ITERATIONS,
+            stop_condition,
             IndelInfParamOpt::Enabled,
             DefaultGenerator::new(123),
         )
@@ -418,10 +370,10 @@ mod tests {
             .unwrap();
         let initial_logl = tkf92_logl(&model, &initial);
 
+        let stop_condition = StopCondition::Epsilon(DEFAULT_EPSILON);
         let inf = TKFIndelInf::<TKF92IndelModel>::new_with_attr(
             model,
-            DEFAULT_EPSILON,
-            MAX_ITERATIONS,
+            stop_condition,
             IndelInfParamOpt::Disabled,
             DefaultGenerator::new(123),
         )

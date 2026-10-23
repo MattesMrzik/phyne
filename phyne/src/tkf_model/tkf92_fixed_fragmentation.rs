@@ -35,7 +35,7 @@ impl TKF92FixedIndelModel {
     }
 
     pub fn new(params: &[f64], fragmentation: Vec<usize>) -> Result<Self> {
-        valid_num_tkf_params(params, TKF92_PARAM_COUNT, "TKF92", "lambda, mu, r")?;
+        valid_num_tkf_params("TKF92", "lambda, mu, r", params, TKF92_PARAM_COUNT)?;
         valid_lambda_mu(
             params[usize::from(TKF92Parameters::Lambda)],
             params[usize::from(TKF92Parameters::Mu)],

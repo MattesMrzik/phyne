@@ -25,19 +25,17 @@ pub(super) static DEFAULT_LAMBDA: f64 = 1.0;
 pub(super) static DEFAULT_MU: f64 = 1.1;
 pub(super) static DEFAULT_R: f64 = 0.5;
 
+/// Bails if an incorrect number of parameters are provided for the given model.
 pub(super) fn valid_num_tkf_params(
+    model_name: &str,
+    param_names: &str,
     params: &[f64],
     expected_len: usize,
-    name: &str,
-    param_names: &str,
 ) -> Result<()> {
     if params.len() != expected_len {
         bail!(
             Tkf,
-            "Expected {} parameters ({}) for {} model, but got {}",
-            expected_len,
-            param_names,
-            name,
+            "{model_name}: expected {expected_len} parameter values ({param_names}), got {}",
             params.len()
         );
     }

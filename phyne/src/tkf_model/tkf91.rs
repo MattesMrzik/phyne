@@ -33,7 +33,7 @@ impl TKF91IndelModel {
     /// Validates the parameters and returns an error if they are invalid:
     /// 0 < lambda < mu < infinity.
     pub fn new(params: &[f64]) -> Result<Self> {
-        valid_num_tkf_params(params, TKF91_PARAM_COUNT, "TKF91", "lambda, mu")?;
+        valid_num_tkf_params("TKF91", "lambda, mu", params, TKF91_PARAM_COUNT)?;
         valid_lambda_mu(
             params[usize::from(TKF91Parameters::Lambda)],
             params[usize::from(TKF91Parameters::Mu)],
