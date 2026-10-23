@@ -147,7 +147,7 @@ mod private_tests {
         let err = TKF91IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Expected 2 parameters (lambda, mu) for TKF91 model")
+            Error::Tkf(msg) if msg.contains("TKF91: expected 2 parameters (lambda, mu), got")
         );
     }
 
@@ -162,7 +162,7 @@ mod private_tests {
         assert_matches!(
             err,
             Error::Tkf(msg)
-                if msg.contains("Parameter lambda must be positive, finite and non-nan")
+                if msg.contains("parameter lambda must be positive, finite and non-nan")
         );
     }
 
@@ -176,7 +176,7 @@ mod private_tests {
         let err = TKF91IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Parameter mu must be positive, finite and non-nan")
+            Error::Tkf(msg) if msg.contains("parameter mu must be positive, finite and non-nan")
         );
     }
 
@@ -187,7 +187,7 @@ mod private_tests {
         let err = TKF91IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Parameter lambda must be less than mu")
+            Error::Tkf(msg) if msg.contains("parameter lambda must be less than mu")
         );
     }
 

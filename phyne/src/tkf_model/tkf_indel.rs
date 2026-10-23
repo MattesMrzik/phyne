@@ -35,7 +35,7 @@ pub(super) fn valid_num_tkf_params(
     if params.len() != expected_len {
         bail!(
             Tkf,
-            "{model_name}: expected {expected_len} parameter values ({param_names}), got {}",
+            "{model_name}: expected {expected_len} parameters ({param_names}), got {}",
             params.len()
         );
     }
@@ -46,21 +46,21 @@ pub(super) fn valid_lambda_mu(lambda: f64, mu: f64) -> Result<()> {
     if !lambda.is_finite() || lambda <= 0.0 {
         bail!(
             Tkf,
-            "Parameter lambda must be positive, finite and non-nan, but got lambda = {}",
+            "parameter lambda must be positive, finite and non-nan, but got lambda = {}",
             lambda
         );
     }
     if !mu.is_finite() || mu <= 0.0 {
         bail!(
             Tkf,
-            "Parameter mu must be positive, finite and non-nan, but got mu = {}",
+            "parameter mu must be positive, finite and non-nan, but got mu = {}",
             mu
         );
     }
     if lambda >= mu {
         bail!(
             Tkf,
-            "Parameter lambda must be less than mu, but got lambda = {} and mu = {}",
+            "parameter lambda must be less than mu, but got lambda = {} and mu = {}",
             lambda,
             mu
         );
@@ -71,7 +71,7 @@ pub(super) fn valid_lambda_mu(lambda: f64, mu: f64) -> Result<()> {
 /// Validates that the TKF92 parameter r is in (0, 1).
 pub(super) fn valid_r(r: f64) -> Result<()> {
     if r.is_nan() || r <= 0.0 || r >= 1.0 {
-        bail!(Tkf, "Parameter r must be in (0, 1), but got r = {}", r);
+        bail!(Tkf, "parameter r must be in (0, 1), but got r = {}", r);
     }
     Ok(())
 }

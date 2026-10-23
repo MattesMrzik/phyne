@@ -229,7 +229,7 @@ mod private_tests {
         assert_matches!(
             err,
             Error::Tkf(msg)
-                if msg.contains("Expected 3 parameters (lambda, mu, r) for TKF92 model")
+                if msg.contains("TKF92: expected 3 parameters (lambda, mu, r), got")
         );
     }
 
@@ -244,7 +244,7 @@ mod private_tests {
         assert_matches!(
             err,
             Error::Tkf(msg)
-                if msg.contains("Parameter lambda must be positive, finite and non-nan")
+                if msg.contains("parameter lambda must be positive, finite and non-nan")
         );
     }
 
@@ -258,7 +258,7 @@ mod private_tests {
         let err = TKF92IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Parameter mu must be positive, finite and non-nan")
+            Error::Tkf(msg) if msg.contains("parameter mu must be positive, finite and non-nan")
         );
     }
 
@@ -269,7 +269,7 @@ mod private_tests {
         let err = TKF92IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Parameter lambda must be less than mu")
+            Error::Tkf(msg) if msg.contains("parameter lambda must be less than mu")
         );
     }
 
@@ -285,7 +285,7 @@ mod private_tests {
         let err = TKF92IndelModel::new(params).unwrap_err();
         assert_matches!(
             err,
-            Error::Tkf(msg) if msg.contains("Parameter r must be in (0, 1)")
+            Error::Tkf(msg) if msg.contains("parameter r must be in (0, 1)")
         );
     }
 
