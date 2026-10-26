@@ -1,4 +1,4 @@
-use approx::assert_relative_eq;
+use approx::relative_eq;
 use fixedbitset::FixedBitSet;
 use log::{info, warn};
 use rand::{Rng, SeedableRng};
@@ -149,12 +149,12 @@ struct BackTrackingResult {
 ///   removed from the alignment. This can only happen if the initial alignment contained columns where
 ///   the homology path of the ancestral character did not survive to any of the leaves.
 ///   If you want to avoid this call [`AncestralAlignment::remove_extinct_columns`] before re-estimation.
-/// * If there are any blocks that are enforced by only the ancestral sequences like in the case of
+/// * If there are any blocks that are enforced by only the ancestral sequences, like in the case of
 ///   extinct columns, they may not be enforced after the re-estimation. Therefore, when creating a new cost from
 ///   the re-estimated alignment the log-likelihoods can differ because the blocks are different.
 ///   Use [`block_borders_enforced_by_ancestral_seqs`] to check.
 ///
-/// # Uses
+/// # Applications
 /// * Can be used as an ASR refinement method if repeatedly called on all internal nodes (i.e. edges),
 ///   see the [example](#example) below.
 /// * It is also used after an NNI move was applied during tree inference to fix the
@@ -186,6 +186,7 @@ struct BackTrackingResult {
 ///
 /// let tkf_indel_model = TKF92IndelModel::default();
 /// let mut tkf92_indel_cost = TKFIndelCostBuilder::new(tkf_indel_model.clone(), phylo).build();
+/// let mut prev_logl = tkf92_indel_cost.cost();
 /// let mut rng = DefaultGenerator::default();
 /// let mut reestimator = EdgeSeqsReestimator::new(&mut tkf92_indel_cost, &mut rng);
 ///
@@ -196,14 +197,16 @@ struct BackTrackingResult {
 ///     match node {
 ///         Internal(_) => {
 ///             let new_cost = reestimator.reestimate(&node)?;
-///             println!(
-///                 "Re-estimated sequences at node {node}, \
-///                  cost after re-estimation: {new_cost}"
-///             );
+///             assert!(new_cost >= prev_logl);
+///             if new_cost > prev_logl {
+///                 println!("logl improved from {prev_logl} to {new_cost}");
+///                 prev_logl = new_cost;
+///             }
 ///         }
 ///         Leaf(_) => {}
 ///     }
 /// }
+///
 /// println!(
 ///     "The re-estimated ancestral MSA is {}",
 ///     reestimator.phylo().msa
@@ -272,9 +275,9 @@ where
     /// Accordingly, this method will return an error if this is not the case.
     ///
     /// # Returns
-    /// On success, returns the ln likelihood of the [`AncestralAlignment`] given the tree after reestimation,
-    /// obtained from the DP table. This value may differ slightly from the one obtained
-    /// by calling `cost.cost()` after reestimation, due to floating-point precision.
+    /// On success, returns the ln likelihood of the [`AncestralAlignment`] given the tree after reestimation.
+    /// This value may differ slightly from the one obtained by calling `cost.cost()`
+    /// after reestimation, due to floating-point precision.
     pub fn reestimate(&mut self, v2_idx: &NodeIdx) -> Result<f64> {
         let v2_id = self.cost.phylo.tree.node(v2_idx).id.clone();
         if v2_idx == &self.cost.phylo.tree.root {
@@ -305,9 +308,9 @@ where
     /// a sibling. If this condition is violated, this method panics.
     ///
     /// # Returns
-    /// Returns the ln likelihood of the [`AncestralAlignment`] given the tree after reestimation,
-    /// obtained from the DP table. This value may differ slightly from the one obtained
-    /// by calling `cost.cost()` after reestimation, due to floating-point precision.
+    /// Returns the ln likelihood of the [`AncestralAlignment`] given the tree after reestimation.
+    /// This value may differ slightly from the one obtained by calling `cost.cost()`
+    /// after reestimation, due to floating-point precision.
     pub fn reestimate_unchecked(&mut self, v2_idx: &NodeIdx) -> f64 {
         if !self
             .cost
@@ -334,7 +337,7 @@ where
         let mappings_changed = self.update_mappings(&backtrack_res);
         debug_assert!(self.cost.phylo.check_dollos_constraint().is_ok());
         self.make_valid_for_further_reestimate_calls();
-        // Making sure that the returned logl is the same if the mappings did not change.
+        // Making sure that the returned logl is unchanged if the mappings did not change.
         // Returning `logl_from_root_model_info` or `backtrack_res.logl` instead of
         // `self.logl_before_reestimation` sometimes results in a slightly different value since
         // `prepare_for_dp` and `make_valid_for_further_reestimate_calls`
@@ -342,7 +345,7 @@ where
         // This fixes https://github.com/acg-team/phyne/issues/175
         if mappings_changed {
             let new_logl = self.cost.logl_from_root_model_info();
-            assert_relative_eq!(new_logl, backtrack_res.logl);
+            debug_assert!(relative_eq!(new_logl, backtrack_res.logl, epsilon = 1e-8));
             self.logl_before_reestimation = new_logl;
             new_logl
         } else {
@@ -405,9 +408,9 @@ where
         let seq_len = self.cost.phylo.msa.len();
         let v1_mapping = mapping_from_node_seq(&backtrack_res.v1_bitset, block_lengths, seq_len);
         let v2_mapping = mapping_from_node_seq(&backtrack_res.v2_bitset, block_lengths, seq_len);
-        let mappings_changed = v1_mapping
-            != *self.cost.phylo.msa.ancestral_map(self.quartet_edges.v1())
-            || v2_mapping != *self.cost.phylo.msa.ancestral_map(self.quartet_edges.v2());
+        let v1_changed = &v1_mapping != self.cost.phylo.msa.ancestral_map(self.quartet_edges.v1());
+        let v2_changed = &v2_mapping != self.cost.phylo.msa.ancestral_map(self.quartet_edges.v2());
+        let mappings_changed = v1_changed || v2_changed;
         let msa = &mut self.cost.phylo.msa;
         assert!(v1_mapping.len() == msa.len());
         assert!(v2_mapping.len() == msa.len());

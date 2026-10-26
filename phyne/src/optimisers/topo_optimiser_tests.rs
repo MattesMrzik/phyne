@@ -914,14 +914,12 @@ fn tkf92_topo_opti() {
     let dir = Path::new("data/tkf/reestimate/");
     let msa = dir.join("masa.fasta");
     let tree = dir.join("tree.newick");
-    let mut phylo = PIB::with_attrs(msa, tree).build_with_ancestors().unwrap();
-    let subst_model = SubstModel::<GTR>::default();
-    let lambda = 0.1;
-    let mu = 0.2;
-    let r = 0.3;
-    phylo.msa.remove_extinct_columns();
+    let phylo = PIB::with_attrs(msa, tree).build_with_ancestors().unwrap();
+
     assert!(!block_borders_enforced_by_ancestral_seqs(&phylo.msa));
-    let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
+
+    let subst_model = SubstModel::<GTR>::default();
+    let tkf_indel_model = TKF92IndelModel::default();
     let tkf_cost = TKFCostBuilder::new(subst_model.clone(), tkf_indel_model.clone(), phylo.clone())
         .build()
         .unwrap();

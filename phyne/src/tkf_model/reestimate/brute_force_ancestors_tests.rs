@@ -9,7 +9,9 @@ use itertools::Itertools;
 #[cfg(feature = "multithread-brute-force-asr")]
 use rayon::prelude::*;
 
-use crate::alignment::{Alignment, AncestralAlignment, MASA};
+use crate::alignment::{
+    block_borders_enforced_by_ancestral_seqs, Alignment, AncestralAlignment, MASA,
+};
 use crate::likelihood::ModelSearchCost;
 use crate::phylo_info::PhyloInfoBuilder;
 use crate::random::FakeGenerator;
@@ -416,6 +418,8 @@ fn tkf92_reestimate_large_tree_for_file_iterative() {
     let lambda = 1.0;
     let mu = 2.0;
     let r = 0.3;
+
+    assert!(!block_borders_enforced_by_ancestral_seqs(&phylo.msa));
 
     // Handle the pre-calculated brute force maxes file
     let precalculated_file = dir.join("precalculated_brute_force_maxes.csv");
