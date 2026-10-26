@@ -323,10 +323,14 @@ where
         self.fill_dp_table();
         let backtrack_res = self.backtrack();
         self.set_invalid();
-        self.update_mappings(&backtrack_res);
+        let mappings_changed = self.update_mappings(&backtrack_res);
         debug_assert!(self.cost.phylo.check_dollos_constraint().is_ok());
         self.make_valid_for_further_reestimate_calls();
-        backtrack_res.logl
+        if mappings_changed {
+            backtrack_res.logl
+        } else {
+            self.cost.logl_from_root_model_info()
+        }
     }
 
     /// Resets the DP and backtracking tables. Initialises the [`QuartetEdges`]. Removes the old
@@ -377,11 +381,16 @@ where
         }
     }
 
-    fn update_mappings(&mut self, backtrack_res: &BackTrackingResult) {
+    /// Updates the ancestral maps of the quartet nodes `v1` and `v2` with the re-estimated
+    /// mappings. Returns `true` if at least one of the maps changed.
+    fn update_mappings(&mut self, backtrack_res: &BackTrackingResult) -> bool {
         let block_lengths = &self.cost.model_info.borrow().block_lengths;
         let seq_len = self.cost.phylo.msa.len();
         let v1_mapping = mapping_from_node_seq(&backtrack_res.v1_bitset, block_lengths, seq_len);
         let v2_mapping = mapping_from_node_seq(&backtrack_res.v2_bitset, block_lengths, seq_len);
+        let mappings_changed = v1_mapping
+            != *self.cost.phylo.msa.ancestral_map(self.quartet_edges.v1())
+            || v2_mapping != *self.cost.phylo.msa.ancestral_map(self.quartet_edges.v2());
         let msa = &mut self.cost.phylo.msa;
         assert!(v1_mapping.len() == msa.len());
         assert!(v2_mapping.len() == msa.len());
@@ -390,6 +399,7 @@ where
             .expect("Failed to update ancestral map for v1");
         msa.update_ancestral_map(self.quartet_edges.v2(), v2_mapping)
             .expect("Failed to update ancestral map for v2");
+        mappings_changed
     }
 
     /// Updates the tmp values of the model info such that there are valid for further
