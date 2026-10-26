@@ -1,3 +1,4 @@
+use approx::assert_relative_eq;
 use fixedbitset::FixedBitSet;
 use log::{info, warn};
 use rand::{Rng, SeedableRng};
@@ -218,6 +219,7 @@ pub struct EdgeSeqsReestimator<'a, T: TKFModel, AA: AncestralAlignment, R: Rng +
     cost: &'a mut TKFIndelCost<T, AA>,
     quartet_edges: QuartetEdges,
     rng: &'a mut RandomGenerator<R>,
+    logl_before_reestimation: f64,
 }
 
 impl<'a, T, AA, R> EdgeSeqsReestimator<'a, T, AA, R>
@@ -243,12 +245,14 @@ where
                  may therefore differ."
             )
         }
+        let logl = cost.cost();
         EdgeSeqsReestimator {
             dp_table: vec![[f64::NEG_INFINITY; DP_COL_SIZE]; num_blocks],
             backtracking_table: vec![[BACKTRACKING_INVALID; DP_COL_SIZE]; num_blocks],
             cost,
             quartet_edges: QuartetEdges::default(),
             rng,
+            logl_before_reestimation: logl,
         }
     }
 
@@ -268,7 +272,9 @@ where
     /// Accordingly, this method will return an error if this is not the case.
     ///
     /// # Returns
-    /// On success, returns the resulting ln likelihood of the [`AncestralAlignment`] given the tree after reestimation.
+    /// On success, returns the ln likelihood of the [`AncestralAlignment`] given the tree after reestimation,
+    /// obtained from the DP table. This value may differ slightly from the one obtained
+    /// by calling `cost.cost()` after reestimation, due to floating-point precision.
     pub fn reestimate(&mut self, v2_idx: &NodeIdx) -> Result<f64> {
         let v2_id = self.cost.phylo.tree.node(v2_idx).id.clone();
         if v2_idx == &self.cost.phylo.tree.root {
@@ -299,7 +305,9 @@ where
     /// a sibling. If this condition is violated, this method panics.
     ///
     /// # Returns
-    /// Returns the resulting ln likelihood of the [`AncestralAlignment`] given the tree after reestimation.
+    /// Returns the ln likelihood of the [`AncestralAlignment`] given the tree after reestimation,
+    /// obtained from the DP table. This value may differ slightly from the one obtained
+    /// by calling `cost.cost()` after reestimation, due to floating-point precision.
     pub fn reestimate_unchecked(&mut self, v2_idx: &NodeIdx) -> f64 {
         if !self
             .cost
@@ -326,10 +334,19 @@ where
         let mappings_changed = self.update_mappings(&backtrack_res);
         debug_assert!(self.cost.phylo.check_dollos_constraint().is_ok());
         self.make_valid_for_further_reestimate_calls();
+        // Making sure that the returned logl is the same if the mappings did not change.
+        // Returning `logl_from_root_model_info` or `backtrack_res.logl` instead of
+        // `self.logl_before_reestimation` sometimes results in a slightly different value since
+        // `prepare_for_dp` and `make_valid_for_further_reestimate_calls`
+        // may introduce small floating point differences.
+        // This fixes https://github.com/acg-team/phyne/issues/175
         if mappings_changed {
-            backtrack_res.logl
+            let new_logl = self.cost.logl_from_root_model_info();
+            assert_relative_eq!(new_logl, backtrack_res.logl);
+            self.logl_before_reestimation = new_logl;
+            new_logl
         } else {
-            self.cost.logl_from_root_model_info()
+            self.logl_before_reestimation
         }
     }
 
