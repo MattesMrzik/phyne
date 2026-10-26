@@ -596,18 +596,6 @@ fn tkf92_fixed_param_range() {
 }
 
 #[test]
-fn tkf92_add_param_range() {
-    let tkf_cost = TKF92IndelAddBlocksCostBuilder::new(
-        &[1.0, 2.0, 0.3],
-        vec![],
-        setup_test_phylo(Alphabet::dna()),
-    )
-    .build()
-    .unwrap();
-    tkf92_indel_param_range(&tkf_cost);
-}
-
-#[test]
 fn tkf91_indel_logl_manual() {
     let phylo = setup_test_phylo(Alphabet::dna());
     let tree = phylo.tree.clone();

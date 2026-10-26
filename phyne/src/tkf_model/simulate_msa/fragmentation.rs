@@ -1,8 +1,7 @@
 use fixedbitset::FixedBitSet;
 
-use crate::alignment::AncestralAlignment;
+use crate::alignment::{blocks_of_alignment, AncestralAlignment};
 use crate::bug;
-use crate::tkf_model::blocks_of_alignment;
 
 /// The fragmentation of an alignment.
 ///

@@ -239,13 +239,6 @@ mod tests;
 
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
-mod tkf92_additional_blocks;
-
-#[cfg(test)]
-pub use tkf92_additional_blocks::*;
-
-#[cfg(test)]
-#[cfg_attr(coverage, coverage(off))]
 mod tkf92_fixed_fragmentation;
 
 #[cfg(test)]

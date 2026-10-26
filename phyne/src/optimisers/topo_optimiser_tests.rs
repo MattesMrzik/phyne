@@ -3,7 +3,9 @@ use std::path::Path;
 
 use approx::assert_relative_eq;
 
-use crate::alignment::{Alignment, Sequences, MSA};
+use crate::alignment::{
+    block_borders_enforced_by_ancestral_seqs, Alignment, AncestralAlignment, Sequences, MSA,
+};
 use crate::evolutionary_models::FrequencyOptimisation::Empirical;
 use crate::likelihood::TreeSearchCost;
 use crate::optimisers::{
@@ -18,9 +20,7 @@ use crate::substitution_models::{
     dna_models::*, protein_models::*, QMatrix, SubstModel, SubstitutionCost,
     SubstitutionCostBuilder as SCB,
 };
-use crate::tkf_model::{
-    blocks_of_alignment, TKF92IndelAddBlocksCostBuilder, TKF92IndelModel, TKFCostBuilder,
-};
+use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder, TKFCostBuilder};
 use crate::{record_wo_desc as record, tree};
 
 // Macros for tests where precomputed results can be used to speed up local testing
@@ -914,20 +914,22 @@ fn tkf92_topo_opti() {
     let dir = Path::new("data/tkf/reestimate/");
     let msa = dir.join("masa.fasta");
     let tree = dir.join("tree.newick");
-    let phylo = PIB::with_attrs(msa, tree).build_with_ancestors().unwrap();
+    let mut phylo = PIB::with_attrs(msa, tree).build_with_ancestors().unwrap();
     let subst_model = SubstModel::<GTR>::default();
     let lambda = 0.1;
     let mu = 0.2;
     let r = 0.3;
+    phylo.msa.remove_extinct_columns();
+    assert!(!block_borders_enforced_by_ancestral_seqs(&phylo.msa));
     let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
-    let tkf_cost = TKFCostBuilder::new(subst_model.clone(), tkf_indel_model, phylo.clone())
-        .build()
-        .unwrap();
+    let tkf_cost =
+        TKFCostBuilder::new(subst_model.clone(), tkf_indel_model.clone(), phylo.clone())
+            .build()
+            .unwrap();
     let unopt_cost = tkf_cost.cost();
     let mut prev_cost = tkf_cost.clone();
     assert_ne!(unopt_cost, f64::NEG_INFINITY);
     let mut rng = FakeGenerator::default();
-    let initial_msa_blocking = blocks_of_alignment(&phylo.msa);
     for _ in 0..5 {
         let result = TopologyOptimiser::with_stop_condition(
             prev_cost.clone(),
@@ -942,13 +944,8 @@ fn tkf92_topo_opti() {
             msa: masa,
             tree: result.cost.tree().clone(),
         };
-        let new_indel_cost = TKF92IndelAddBlocksCostBuilder::new(
-            &[lambda, mu, r],
-            initial_msa_blocking.clone(),
-            new_phylo.clone(),
-        )
-        .build()
-        .unwrap();
+        let new_indel_cost =
+            TKFIndelCostBuilder::new(tkf_indel_model.clone(), new_phylo.clone()).build();
         let new_subst_cost = SCB::new(subst_model.clone(), new_phylo).build().unwrap();
         let new_cost = new_indel_cost.cost() + new_subst_cost.cost();
 

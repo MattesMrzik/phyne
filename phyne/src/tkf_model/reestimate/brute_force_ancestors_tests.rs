@@ -17,8 +17,7 @@ use crate::tkf_model::reestimate::cache::possible_assignments_of_edge;
 use crate::tkf_model::reestimate::mapping_from_node_seq;
 use crate::tkf_model::tests::get_mapping_for_any_node;
 use crate::tkf_model::{
-    EdgeSeqsReestimator, TKF92IndelAddBlocksCostBuilder, TKF92IndelModel, TKFIndelCost,
-    TKFIndelCostBuilder, TKFModel,
+    EdgeSeqsReestimator, TKF92IndelModel, TKFIndelCost, TKFIndelCostBuilder, TKFModel,
 };
 use crate::tree::NodeIdx;
 
@@ -428,7 +427,8 @@ fn tkf92_reestimate_large_tree_for_file_iterative() {
 
     // the cost to be used for repeated reestimation
     let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
-    let mut reestimator_cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo.clone()).build();
+    let mut reestimator_cost =
+        TKFIndelCostBuilder::new(tkf_indel_model.clone(), phylo.clone()).build();
     // cloning here to leave the cost in a clean state before reestimation
     let mut prev_logl = reestimator_cost.clone().cost();
     let mut rng = FakeGenerator::default();
@@ -444,22 +444,12 @@ fn tkf92_reestimate_large_tree_for_file_iterative() {
         .collect::<Vec<_>>()
         .repeat(repeat);
 
-    // Since the inference of the observed blocks may change after reestimation (an so does the
-    // cost calculation of a clean cost struct that we use to compare against), we store the
-    // initial blocks here and create the clean cost to compare against with these as additional
-    // blocks.
-    let initial_msa_blocking = reestimator.cost.model_info.borrow().blocks.clone();
     for (iteration, node) in nodes.into_iter().enumerate() {
         // Perform Dynamic Programming reestimation
         let max_dp = reestimator.reestimate_unchecked(node);
         // Perform brute force calculation
-        let cost_for_brute_force = TKF92IndelAddBlocksCostBuilder::new(
-            &[lambda, mu, r],
-            initial_msa_blocking.clone(),
-            reestimator.phylo().clone(),
-        )
-        .build()
-        .unwrap();
+        let cost_for_brute_force =
+            TKFIndelCostBuilder::new(tkf_indel_model.clone(), reestimator.phylo().clone()).build();
         let _ = cost_for_brute_force.cost();
         let max_brute_force = calc_or_lookup_brute_force_max(
             iteration,
@@ -469,13 +459,8 @@ fn tkf92_reestimate_large_tree_for_file_iterative() {
             node,
         );
         // Create a clean cost to compare against
-        let clean_cost = TKF92IndelAddBlocksCostBuilder::new(
-            &[lambda, mu, r],
-            initial_msa_blocking.clone(),
-            reestimator.phylo().clone(),
-        )
-        .build()
-        .unwrap();
+        let clean_cost =
+            TKFIndelCostBuilder::new(tkf_indel_model.clone(), reestimator.phylo().clone()).build();
         let logl_from_clean_cost = clean_cost.cost();
 
         assert_relative_eq!(max_dp, logl_from_clean_cost, epsilon = 1e-10);

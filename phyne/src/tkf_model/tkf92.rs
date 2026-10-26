@@ -1,11 +1,10 @@
 use std::fmt::Display;
 
-use hashbrown::HashSet;
 use num_enum::{FromPrimitive, IntoPrimitive};
 use rand::{Rng, SeedableRng};
 use rand_distr::Geometric;
 
-use crate::alignment::AncestralAlignment;
+use crate::alignment::{blocks_of_ancestral_alignment, AncestralAlignment};
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::random::RandomGenerator;
 use crate::tkf_model::simulate_msa::{ExpectedRootLength, FragmentSampler};
@@ -132,7 +131,7 @@ impl TKFModel for TKF92IndelModel {
     }
 
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
-        blocks_of_alignment(msa)
+        blocks_of_ancestral_alignment(msa)
     }
 }
 
@@ -170,35 +169,6 @@ impl ExpectedRootLength for TKF92IndelModel {
     fn expected_root_length(&self) -> f64 {
         (self.lambda() / self.mu()) / ((1.0 - self.lambda() / self.mu()) * (1.0 - self.r()))
     }
-}
-
-/// Determines the block borders from the alignment. A block border is defined as a
-/// position where any sequence changes from gap to non-gap or vice versa. Returns a sorted
-/// vector of the right exclusive block borders.
-pub(crate) fn blocks_of_alignment<AA: AncestralAlignment>(msa: &AA) -> Vec<usize> {
-    let mut blocks: HashSet<usize> = HashSet::new();
-    if msa.len() == 0 {
-        return vec![];
-    }
-    for map in msa
-        .ancestral_maps()
-        .values()
-        .chain(msa.leaf_maps().values())
-    {
-        let mut previous_is_char = map[0].is_some();
-        for (i, c) in map.iter().skip(1).enumerate() {
-            let current_is_char = c.is_some();
-            // whenever there is a change from gap to not gap or vice versa, we have a block border
-            if previous_is_char ^ current_is_char {
-                blocks.insert(i + 1);
-            }
-            previous_is_char = current_is_char;
-        }
-        blocks.insert(map.len());
-    }
-    let mut blocks: Vec<usize> = blocks.iter().copied().collect();
-    blocks.sort();
-    blocks
 }
 
 #[cfg(test)]

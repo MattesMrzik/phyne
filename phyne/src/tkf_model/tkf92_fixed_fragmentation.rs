@@ -5,12 +5,12 @@ use rstest::rstest;
 use std::cell::RefCell;
 use std::fmt::Display;
 
-use crate::alignment::AncestralAlignment;
+use crate::alignment::{blocks_of_alignment, AncestralAlignment};
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
-    blocks_of_alignment, valid_lambda_mu, valid_number_tkf_params, valid_r, TKF92Parameters,
-    TKFIndelCost, TKFIndelModelInfo, TKFModel, TKF92_PARAM_COUNT,
+    valid_lambda_mu, valid_number_tkf_params, valid_r, TKF92Parameters, TKFIndelCost,
+    TKFIndelModelInfo, TKFModel, TKF92_PARAM_COUNT,
 };
 use crate::{bail, Result};
 
