@@ -20,7 +20,7 @@ use crate::substitution_models::{
     dna_models::*, protein_models::*, QMatrix, SubstModel, SubstitutionCost,
     SubstitutionCostBuilder as SCB,
 };
-use crate::tkf_model::{TKF92IndelModel, TKFIndelCostBuilder, TKFCostBuilder};
+use crate::tkf_model::{TKF92IndelModel, TKFCostBuilder, TKFIndelCostBuilder};
 use crate::{record_wo_desc as record, tree};
 
 // Macros for tests where precomputed results can be used to speed up local testing
@@ -922,10 +922,9 @@ fn tkf92_topo_opti() {
     phylo.msa.remove_extinct_columns();
     assert!(!block_borders_enforced_by_ancestral_seqs(&phylo.msa));
     let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r]).unwrap();
-    let tkf_cost =
-        TKFCostBuilder::new(subst_model.clone(), tkf_indel_model.clone(), phylo.clone())
-            .build()
-            .unwrap();
+    let tkf_cost = TKFCostBuilder::new(subst_model.clone(), tkf_indel_model.clone(), phylo.clone())
+        .build()
+        .unwrap();
     let unopt_cost = tkf_cost.cost();
     let mut prev_cost = tkf_cost.clone();
     assert_ne!(unopt_cost, f64::NEG_INFINITY);

@@ -5,7 +5,7 @@ use rstest::rstest;
 use std::cell::RefCell;
 use std::fmt::Display;
 
-use crate::alignment::{blocks_of_alignment, AncestralAlignment};
+use crate::alignment::{blocks_of_ancestral_alignment, AncestralAlignment};
 use crate::likelihood::{ParamRange, PARAM_RANGE_UNIT_INTERVAL_EXCLUSIVE};
 use crate::phylo_info::PhyloInfo;
 use crate::tkf_model::{
@@ -100,7 +100,7 @@ impl TKFModel for TKF92FixedIndelModel {
     }
 
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
-        let alignment_blocks = blocks_of_alignment(msa);
+        let alignment_blocks = blocks_of_ancestral_alignment(msa);
         merge_fragmentation_with_blocks(&self.fragmentation, &alignment_blocks)
     }
 }

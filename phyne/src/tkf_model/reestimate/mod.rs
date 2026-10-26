@@ -1,8 +1,8 @@
 use fixedbitset::FixedBitSet;
-use log::info;
+use log::{info, warn};
 use rand::{Rng, SeedableRng};
 
-use crate::alignment::{AncestralAlignment, Mapping};
+use crate::alignment::{block_borders_enforced_by_ancestral_seqs, AncestralAlignment, Mapping};
 use crate::likelihood::TreeSearchCost;
 use crate::phylo_info::PhyloInfo;
 use crate::random::RandomGenerator;
@@ -142,36 +142,49 @@ struct BackTrackingResult {
 /// of the node that is passed as argument and its parent node under the [`TKFModel`]
 /// maximum likelihood criterion. The re-estimation of indel points can remove characters or add new
 /// characters ([wild cards](`crate::alphabets::AMB_CHAR`)) to the ancestral sequences.
-/// If a character is removed from a column leaving it empty, the column is not removed from the alignment.
-/// This can only happen if the initial alignment contained columns where the homology path of the
-/// ancestral character did not survive to any of the leaves. If you want to avoid this call
-/// [`AncestralAlignment::remove_extinct_columns`] before re-estimation.
-/// Can be used as an ASR refinement method if repeatedly called on all internal nodes (i.e. edges),
-/// see the [example](#example) below.
-/// It is also used after an NNI move was applied during tree inference to fix the
-/// ancestral sequences of the affected nodes, see
-/// [`crate::tkf_model::TKFIndelCost::update_tree`].
+///
+/// # Attention
+/// * If during re-estimation a character is removed from a column leaving it empty, the column is not
+///   removed from the alignment. This can only happen if the initial alignment contained columns where
+///   the homology path of the ancestral character did not survive to any of the leaves.
+///   If you want to avoid this call [`AncestralAlignment::remove_extinct_columns`] before re-estimation.
+/// * If there are any blocks that are enforced by only the ancestral sequences like in the case of
+///   extinct columns, they may not be enforced after the re-estimation. Therefore, when creating a new cost from
+///   the re-estimated alignment the log-likelihoods can differ because the blocks are different.
+///   Use [`block_borders_enforced_by_ancestral_seqs`] to check.
+///
+/// # Uses
+/// * Can be used as an ASR refinement method if repeatedly called on all internal nodes (i.e. edges),
+///   see the [example](#example) below.
+/// * It is also used after an NNI move was applied during tree inference to fix the
+///   ancestral sequences of the affected nodes, see
+///   [`crate::tkf_model::TKFIndelCost::update_tree`].
 ///
 /// # Example
 /// ```rust
 /// # use phyne::Result;
 /// # fn main() -> Result<()> {
-/// use phyne::alignment::AncestralAlignment;
+/// use phyne::alignment::{AncestralAlignment, block_borders_enforced_by_ancestral_seqs};
+/// use phyne::likelihood::ModelSearchCost;
 /// use phyne::phylo_info::PhyloInfoBuilder;
 /// use phyne::random::DefaultGenerator;
 /// use phyne::tkf_model::{EdgeSeqsReestimator, TKF92IndelModel, TKFIndelCostBuilder};
 /// use phyne::tree::NodeIdx::{Internal, Leaf};
+///
 /// // Re-estimation for ASR refinement.
-/// // The alignment below includes ancestral sequences for which the indel points will be refined.
+/// // The alignment below includes ancestral sequences
+/// // for which the indel points will be re-estimated.
 /// let tree = "data/tkf/reestimate/tree.newick";
 /// let msa = "data/tkf/reestimate/masa.fasta";
 /// let mut phylo = PhyloInfoBuilder::with_attrs(msa, tree).build_with_ancestors()?;
+///
+/// // By calling and ensuring this we can guarantee
+/// // that the clean_cost matches the re-estimated cost.
 /// phylo.msa.remove_extinct_columns();
-/// let lambda = 0.9;
-/// let mu = 1.0;
-/// let r = 0.5;
-/// let tkf_indel_model = TKF92IndelModel::new(&[lambda, mu, r])?;
-/// let mut tkf92_indel_cost = TKFIndelCostBuilder::new(tkf_indel_model, phylo).build();
+/// assert!(!block_borders_enforced_by_ancestral_seqs(&phylo.msa));
+///
+/// let tkf_indel_model = TKF92IndelModel::default();
+/// let mut tkf92_indel_cost = TKFIndelCostBuilder::new(tkf_indel_model.clone(), phylo).build();
 /// let mut rng = DefaultGenerator::default();
 /// let mut reestimator = EdgeSeqsReestimator::new(&mut tkf92_indel_cost, &mut rng);
 ///
@@ -182,7 +195,10 @@ struct BackTrackingResult {
 ///     match node {
 ///         Internal(_) => {
 ///             let new_cost = reestimator.reestimate(&node)?;
-///             println!("Re-estimated sequences at node {node}, cost after re-estimation: {new_cost}",);
+///             println!(
+///                 "Re-estimated sequences at node {node}, \
+///                  cost after re-estimation: {new_cost}"
+///             );
 ///         }
 ///         Leaf(_) => {}
 ///     }
@@ -191,7 +207,9 @@ struct BackTrackingResult {
 ///     "The re-estimated ancestral MSA is {}",
 ///     reestimator.phylo().msa
 /// );
-/// println!("Re-estimation complete.");
+///
+/// let clean_cost = TKFIndelCostBuilder::new(tkf_indel_model, reestimator.phylo().clone()).build();
+/// assert_eq!(clean_cost.cost(), tkf92_indel_cost.cost());
 /// # Ok(()) }
 /// ```
 pub struct EdgeSeqsReestimator<'a, T: TKFModel, AA: AncestralAlignment, R: Rng + SeedableRng> {
@@ -216,6 +234,15 @@ where
         rng: &'a mut RandomGenerator<R>,
     ) -> EdgeSeqsReestimator<'a, T, AA, R> {
         let num_blocks = cost.model_info.borrow().blocks.len();
+        if block_borders_enforced_by_ancestral_seqs(&cost.phylo.msa) {
+            warn!(
+                "There are block borders enforced by the ancestral sequences. \
+                 Re-estimation may change the ancestral sequences and therefore the blocks \
+                 that are enforced by the alignment. The log-likelihood of the current cost \
+                 and the log-likelihood of a cost created from the re-estimated alignment 
+                 may therefore differ."
+            )
+        }
         EdgeSeqsReestimator {
             dp_table: vec![[f64::NEG_INFINITY; DP_COL_SIZE]; num_blocks],
             backtracking_table: vec![[BACKTRACKING_INVALID; DP_COL_SIZE]; num_blocks],
