@@ -133,8 +133,7 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
             // new
             let clean_cost = self.c.cost();
             println!(
-                "params of opti after setting param {param:?} to value {}: {}, {}, {}",
-                param_opt.value,
+                "params of clean after opti: {}, {}, {}",
                 self.c.param(0),
                 self.c.param(1),
                 self.c.param(2)
@@ -176,7 +175,7 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
         let cost_afte_opti = res.problem.problem.unwrap().cost.borrow().clone();
 
         println!(
-            "params of opti after opti: {}, {}, {}",
+            "params of opti  after opti: {}, {}, {}",
             cost_afte_opti.param(0),
             cost_afte_opti.param(1),
             cost_afte_opti.param(2)
