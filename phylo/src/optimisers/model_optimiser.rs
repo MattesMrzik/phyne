@@ -134,7 +134,7 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
             let clean_cost = self.c.cost();
             assert_eq!(
                 curr_cost, clean_cost,
-                "curr_cost = {}, clean_cost = {}",
+                "curr_cost = {}, clean_cost = {}, param idx = {param}",
                 curr_cost, clean_cost
             );
             debug!(
