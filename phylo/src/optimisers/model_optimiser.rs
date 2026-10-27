@@ -119,7 +119,8 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
             let param_opt = self.opt_parameter(param, start_value)?;
             if param_opt.final_cost < curr_cost {
                 // Parameter will have been reset by the optimiser, set it back to start value
-                self.c.set_param(param, start_value);
+                // This should not be necessary since the optimiser clones it
+                // self.c.set_param(param, start_value);
                 continue;
             }
             self.c.set_param(param, param_opt.value);
