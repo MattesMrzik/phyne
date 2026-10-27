@@ -41,7 +41,7 @@ impl<Q: QMatrix, T: TKFModel, AA: AncestralAlignment> ModelSearchCost for TKFCos
     }
 
     fn param_count(&self) -> usize {
-        self.indel_cost.model.params().len() + self.subst_cost.model.qmatrix.params().len()
+        self.indel_cost.param_count() + self.subst_cost.param_count()
     }
 
     fn param(&self, idx: usize) -> f64 {
