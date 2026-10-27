@@ -599,7 +599,8 @@ fn tkf_model_opti_template<C: ModelSearchCost + Clone + Display>(c: C) {
         .unwrap();
     assert_eq!(intermediate_cost, o.initial_cost);
     assert_eq!(o.final_cost, o.cost.cost());
-    assert!(o.initial_cost < o.final_cost);
+    // This may not be tha case since the empirical frequencies do not necessarily improve logl
+    // assert!(o.initial_cost < o.final_cost);
     assert_eq!(o.cost.freqs(), &o.cost.empirical_freqs());
     for param in 0..c.param_count() {
         assert_ne!(c.param(param), o.cost.param(param));
@@ -627,6 +628,20 @@ fn tkf91_model_opti() {
 fn tkf92_model_opti() {
     let fldr = Path::new("./data/pip/arpip/");
     let info = PIB::with_attrs(fldr.join("msa.fasta"), fldr.join("tree.nwk"))
+        .build_with_ancestors()
+        .unwrap();
+    let subst_model = SubstModel::<HKY>::new(&[], &[2.0]);
+    let tkf92 = TKF92CostBuilder::new(&[0.8, 1.0, 0.2], subst_model, info)
+        .build()
+        .unwrap();
+    tkf_model_opti_template(tkf92);
+}
+
+#[test]
+#[cfg_attr(feature = "ci_coverage", ignore)]
+fn tkf92_model_opti_large() {
+    let fldr = Path::new("./data/tkf/reestimate/");
+    let info = PIB::with_attrs(fldr.join("masa.fasta"), fldr.join("tree.newick"))
         .build_with_ancestors()
         .unwrap();
     let subst_model = SubstModel::<HKY>::new(&[], &[2.0]);
