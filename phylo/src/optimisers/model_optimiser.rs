@@ -132,6 +132,13 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
             curr_cost = param_opt.final_cost;
             // new
             let clean_cost = self.c.cost();
+            println!(
+                "params of opti after setting param {param:?} to value {}: {}, {}, {}",
+                param_opt.value,
+                self.c.param(0),
+                self.c.param(1),
+                self.c.param(2)
+            );
             assert_eq!(
                 curr_cost, clean_cost,
                 "curr_cost = {}, clean_cost = {}, param idx = {param}",
@@ -164,8 +171,40 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
             .configure(|_| IterState::new().param(start_value).max_iters(500))
             .run()?;
         let cost = -res.state().best_cost;
+
+        let new_param = res.state().best_param.unwrap();
+        let cost_afte_opti = res.problem.problem.unwrap().cost.borrow().clone();
+
+        println!(
+            "params of opti after opti: {}, {}, {}",
+            cost_afte_opti.param(0),
+            cost_afte_opti.param(1),
+            cost_afte_opti.param(2)
+        );
+        //
+        // let mut cost_with_returned_param = self.c.clone();
+        // cost_with_returned_param.set_param(param, res.state().best_param.unwrap());
+        // let cost_with_returned_param = cost_with_returned_param.cost();
+        //
+        // let returned_cost = -res.state().best_cost;
+        // assert!(
+        //     relative_eq!(cost_with_returned_param, returned_cost, epsilon = 1e-10),
+        //     "cost_with_returned_param = {}, returned_cost = {}",
+        //     cost_with_returned_param,
+        //     returned_cost
+        // );
+        //
+        // // the opt is always better
+        // assert!(
+        //     curr_cost <= cost_with_returned_param,
+        //     "curr_cost = {}, cost_with_returned_param = {}",
+        //     curr_cost,
+        //     cost_with_returned_param
+        // );
+        // we want to set the current cost to the cost-withreturpaamr
+
         Ok(SingleValOptResult {
-            value: res.state().best_param.unwrap(),
+            value: new_param,
             final_cost: cost,
         })
     }
