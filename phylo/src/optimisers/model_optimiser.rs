@@ -71,14 +71,19 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
         // old version:
         // debug_assert_eq!(curr_cost, self.c.cost());
         // new version:
-        let clean_cost = self.c.cost();
-        assert!(
-            (curr_cost - clean_cost).abs() < 1e-9,
-            "curr_cost and clean cost differ too much: curr_cost= {}, clean cost= {}, diff = {}",
-            curr_cost,
-            clean_cost,
-            (curr_cost - clean_cost).abs()
-        );
+
+        // let clean_cost = self.c.cost();
+        // assert!(
+        //     (curr_cost - clean_cost).abs() < 1e-9,
+        //     "curr_cost and clean cost differ too much: curr_cost= {}, clean cost= {}, diff = {}",
+        //     curr_cost,
+        //     clean_cost,
+        //     (curr_cost - clean_cost).abs()
+        // );
+
+        // original code:
+        assert_eq!(curr_cost, self.c.cost());
+        // debug_assert_eq!(curr_cost, self.c.cost());
 
         info!("Done optimising model parameters");
         info!("Final cost: {curr_cost}, achieved in {iterations} iteration(s)");
@@ -125,6 +130,13 @@ impl<C: ModelSearchCost + Display + Clone> ModelOptimiser<C> {
             }
             self.c.set_param(param, param_opt.value);
             curr_cost = param_opt.final_cost;
+            // new
+            let clean_cost = self.c.cost();
+            assert_eq!(
+                curr_cost, clean_cost,
+                "curr_cost = {}, clean_cost = {}",
+                curr_cost, clean_cost
+            );
             debug!(
                 "Optimised parameter {param:?} to value {} with cost {curr_cost}",
                 param_opt.value
