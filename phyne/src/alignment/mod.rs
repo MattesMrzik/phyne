@@ -777,7 +777,7 @@ impl MASA {
 /// For given [`Mapping`] iterator returns the sorted indices where any of the maps changes
 /// from `Some(_)` to `None` or vice versa.
 /// Used in [`blocks_of_alignment`] and [`blocks_of_ancestral_alignment`].
-fn blocks_for_maps<'a, I: Iterator<Item = &'a Vec<Option<usize>>>>(maps: I) -> Vec<usize> {
+fn blocks_for_maps<'a, I: Iterator<Item = &'a Mapping>>(maps: I) -> Vec<usize> {
     let mut blocks: HashSet<usize> = HashSet::new();
     for map in maps {
         if map.is_empty() {

@@ -4,7 +4,7 @@ use std::path::Path;
 use approx::assert_relative_eq;
 
 use crate::alignment::{
-    block_borders_enforced_by_ancestral_seqs, Alignment, AncestralAlignment, Sequences, MSA,
+    block_borders_enforced_by_ancestral_seqs, Alignment,  Sequences, MSA,
 };
 use crate::evolutionary_models::FrequencyOptimisation::Empirical;
 use crate::likelihood::TreeSearchCost;
