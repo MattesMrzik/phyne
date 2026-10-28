@@ -71,7 +71,7 @@ impl<T: TKFModel + Default> Default for TKFIndelInf<T, DefaultRng> {
     /// Creates a new [`TKFIndelInf`] with default attributes.
     ///
     /// It uses the default [`TKFModel`] implementation for the indel model and optimises
-    /// its parameters during the inference process. It uses the [`DEFAULT_EPSILON`]
+    /// its parameters during the inference process. It uses the [`crate::DEFAULT_EPSILON`]
     /// and no limit on the number of iterations.
     /// The `rng` is seeded with a random seed and is used for breaking ties in the re-estimation
     /// dynamic programming process. It advances across iterations, so the results are not
