@@ -30,7 +30,7 @@ pub(crate) enum TKF92Parameters {
 /// By setting this to a value smaller than the number of parameters in [`TKF92SearchParameters`],
 /// we can limit the model search to a subset of parameters/axes. For example, if we set
 /// this to 2, then only the ratio and rate will be optimized. This is useful for ad hoc testing.
-pub(super) const TKF92_SEARCH_PARAM_COUNT: usize = 3;
+const TKF92_SEARCH_PARAM_COUNT: usize = 3;
 
 /// Defined parameters/axes for the [`TKF92IndelModel`] where the parameter optimisation is
 /// performed on. Can be limited by setting [`TKF92_SEARCH_PARAM_COUNT`] to a value smaller than the
@@ -40,7 +40,7 @@ pub(super) const TKF92_SEARCH_PARAM_COUNT: usize = 3;
 /// which is assumed so that the equilibrium root length distribution is well-defined.
 #[derive(Debug, Eq, PartialEq, FromPrimitive, IntoPrimitive)]
 #[repr(usize)]
-pub(super) enum TKF92SearchParameters {
+enum TKF92SearchParameters {
     Ratio = 0,
     Rate = 1,
     R = 2,
@@ -261,9 +261,10 @@ mod private_tests {
         assert_eq!(model.lambda(), 0.5);
         assert_eq!(model.mu(), 1.0);
         assert_eq!(model.r(), 0.3);
-        assert_eq!(model.params(), &[0.5, 1.0, 0.3]);
         assert_eq!(model.ln_r, 0.3f64.ln());
         assert_eq!(model.ln_one_minus_r_over_r, ((1.0f64 - 0.3) / 0.3).ln());
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Ratio)), 0.5);
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Rate)), 0.75);
     }
 
     #[rstest]
@@ -337,22 +338,14 @@ mod private_tests {
     #[test]
     #[should_panic]
     fn tkf92_param_range_invalid_index() {
-        let model = TKF92IndelModel {
-            params: vec![0.5, 1.0, 0.3],
-            ln_r: 0.0, // cache filled with dummy, since it is not needed here
-            ln_one_minus_r_over_r: 0.0, // cache filled with dummy since it is not needed here
-        };
+        let model = TKF92IndelModel::default();
         // Use an invalid index
-        model.param_range(3);
+        model.param_range(TKF92_INTERNAL_PARAM_COUNT);
     }
 
     #[test]
     fn tkf92_model_fmt() {
-        let tkf_indel_model = TKF92IndelModel {
-            params: vec![1.1, 2.0, 0.3],
-            ln_r: 0.0,                  // cache filled with dummy since it is not printed
-            ln_one_minus_r_over_r: 0.0, // cache filled with dummy since it is not printed
-        };
+        let tkf_indel_model = TKF92IndelModel::new(&[1.1, 2.0, 0.3]).unwrap();
 
         let fmt = format!("{}", tkf_indel_model);
 
@@ -360,22 +353,111 @@ mod private_tests {
     }
 
     #[test]
-    fn tkf92_indel_set_param() {
-        let mut model = TKF92IndelModel {
-            params: vec![1.0, 2.0, 0.3],
-            ln_r: 0.0,                  // dummy
-            ln_one_minus_r_over_r: 0.0, // dummy
-        };
-        let new_lambda = 1.1;
-        model.set_param(usize::from(TKF92Parameters::Lambda), new_lambda);
+    fn tkf92_setting_params_doesnt_drift() {
+        // During prototyping when setting a new ratio/rate the lambda and mu
+        // would be used to calculate new values for lambda and mu.
+        // This caused parameters to differ slightly when setting rate or ratio multiple times,
+        // i.e., setting rate to x_1, x_2, ..., x_n or setting rate straight to x_n would yield
+        // different values for lambda and mu.
+        // With the current implementation, coordinates systems are separated: to calculate lambda
+        // and mu, only ratio and rate are used, and to calculate ratio and rate, only lambda and mu
+        // are used.
+        let mut model1 = TKF92IndelModel::new(&[1.0, 2.0, 0.3]).unwrap();
+        let mut model2 = model1.clone();
+        let ratio_idx = usize::from(TKF92SearchParameters::Ratio);
+        let rate_idx = usize::from(TKF92SearchParameters::Rate);
+
+        let new_rate = f64::EPSILON;
+        let end_rate = 2.0;
+        model1.set_param(rate_idx, new_rate);
+        model1.set_param(rate_idx, end_rate);
+        model2.set_param(rate_idx, end_rate);
+        assert_eq!(model1.lambda(), model2.lambda());
+        assert_eq!(model1.mu(), model2.mu());
+
+        let new_ratio = 1.0 - f64::EPSILON;
+        let end_ratio = 0.5;
+        model1.set_param(ratio_idx, new_ratio);
+        model1.set_param(ratio_idx, end_ratio);
+        model2.set_param(ratio_idx, end_ratio);
+        assert_eq!(model1.lambda(), model2.lambda());
+        assert_eq!(model1.mu(), model2.mu());
+    }
+
+    #[test]
+    fn tkf92_set_lambda() {
+        let mut model = TKF92IndelModel::new(&[1.0, 2.0, 0.5]).unwrap();
+        let new_lambda = 0.5;
+        model.set_param(usize::from(TKF92SearchParameters::Lambda), new_lambda);
         assert_eq!(model.lambda(), new_lambda);
-        let new_mu = 2.1;
-        model.set_param(usize::from(TKF92Parameters::Mu), new_mu);
+        assert_eq!(model.mu(), 2.0);
+        assert_eq!(model.r(), 0.5);
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Ratio)), 0.25);
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Rate)), 1.25);
+    }
+
+    #[test]
+    fn tkf92_set_mu() {
+        let mut model = TKF92IndelModel::new(&[1.0, 2.0, 0.5]).unwrap();
+        let new_mu = 3.0;
+        model.set_param(usize::from(TKF92SearchParameters::Mu), new_mu);
+        assert_eq!(model.lambda(), 1.0);
         assert_eq!(model.mu(), new_mu);
-        let new_r = 0.4;
-        model.set_param(usize::from(TKF92Parameters::R), new_r);
+        assert_eq!(model.r(), 0.5);
+        assert_eq!(
+            model.param(usize::from(TKF92SearchParameters::Ratio)),
+            1.0 / 3.0
+        );
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Rate)), 2.0);
+    }
+
+    #[test]
+    fn tkf92_set_r() {
+        let mut model = TKF92IndelModel::new(&[1.0, 2.0, 0.5]).unwrap();
+        let new_r = 0.25;
+        model.set_param(usize::from(TKF92SearchParameters::R), new_r);
+        assert_eq!(model.lambda(), 1.0);
+        assert_eq!(model.mu(), 2.0);
         assert_eq!(model.r(), new_r);
-        assert_eq!(model.ln_r, new_r.ln());
-        assert_eq!(model.ln_one_minus_r_over_r, (-new_r).ln_1p() - (new_r).ln());
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Ratio)), 0.5);
+        assert_eq!(model.param(usize::from(TKF92SearchParameters::Rate)), 1.5);
+    }
+
+    #[test]
+    fn tkf92_set_ratio() {
+        let mut model = TKF92IndelModel::new(&[1.0, 5.0, 0.5]).unwrap();
+        let initial_rate = model.param(usize::from(TKF92SearchParameters::Rate));
+        let new_ratio = 0.5;
+        model.set_param(usize::from(TKF92SearchParameters::Ratio), new_ratio);
+        assert_eq!(model.lambda(), 2.0);
+        assert_eq!(model.mu(), 4.0);
+        assert_eq!(model.r(), 0.5);
+        assert_eq!(
+            model.param(usize::from(TKF92SearchParameters::Ratio)),
+            new_ratio
+        );
+        assert_eq!(
+            model.param(usize::from(TKF92SearchParameters::Rate)),
+            initial_rate
+        );
+    }
+
+    #[test]
+    fn tkf92_set_rate() {
+        let mut model = TKF92IndelModel::new(&[1.0, 2.0, 0.5]).unwrap();
+        let initial_ratio = model.param(usize::from(TKF92SearchParameters::Ratio));
+        let new_rate = 3.0;
+        model.set_param(usize::from(TKF92SearchParameters::Rate), new_rate);
+        assert_eq!(model.lambda(), 2.0);
+        assert_eq!(model.mu(), 4.0);
+        assert_eq!(model.r(), 0.5);
+        assert_eq!(
+            model.param(usize::from(TKF92SearchParameters::Ratio)),
+            initial_ratio
+        );
+        assert_eq!(
+            model.param(usize::from(TKF92SearchParameters::Rate)),
+            new_rate
+        );
     }
 }
