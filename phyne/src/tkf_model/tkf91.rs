@@ -12,6 +12,7 @@ use crate::tkf_model::{
 };
 use crate::Result;
 
+/// Number of parameters in the TKF91 model: lambda and mu.
 pub const TKF91_PARAM_COUNT: usize = 2;
 
 #[derive(Debug, Eq, PartialEq, FromPrimitive, IntoPrimitive)]
@@ -22,6 +23,32 @@ pub(crate) enum TKF91Parameters {
     #[num_enum(catch_all)]
     Invalid(usize),
 }
+
+/// By setting this to a value smaller than the number of parameters in [`TKF91SearchParameters`],
+/// we can limit the model search to a subset of parameters/axes. For example, if we set
+/// this to 2, then only the ratio and rate will be optimized. This is useful for ad hoc testing.
+pub(super) const TKF91_SEARCH_PARAM_COUNT: usize = 2;
+
+/// Defined parameters/axes for the [`TKF91IndelModel`] where the parameter optimisation is
+/// performed on. Can be limited by setting [`TKF91_SEARCH_PARAM_COUNT`] to a value smaller than the
+/// number of parameters in this enum.
+///
+/// Searching over derived parameters can be useful for optimisation in case of constraints like lambda < mu,
+/// which is assumed so that the equilibrium root length distribution is well-defined.
+#[derive(Debug, Eq, PartialEq, FromPrimitive, IntoPrimitive)]
+#[repr(usize)]
+pub(super) enum TKF91SearchParameters {
+    Ratio = 0,
+    Rate = 1,
+    Lambda = 2,
+    Mu = 3,
+    #[num_enum(catch_all)]
+    Invalid(usize),
+}
+
+/// Number of parameters stored internally. That is, both the [usual parameters](`TKF91Parameters`)
+/// and [derived parameters](`TKF91SearchParameters`).
+const TKF91_INTERNAL_PARAM_COUNT: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TKF91IndelModel {
@@ -34,48 +61,58 @@ impl TKF91IndelModel {
     /// 0 < lambda < mu < infinity.
     pub fn new(params: &[f64]) -> Result<Self> {
         valid_number_tkf_params("TKF91", "lambda, mu", params, TKF91_PARAM_COUNT)?;
-        valid_lambda_mu(
-            params[usize::from(TKF91Parameters::Lambda)],
-            params[usize::from(TKF91Parameters::Mu)],
-        )?;
-        Ok(Self {
-            params: params.to_vec(),
-        })
+        let lambda = params[usize::from(TKF91Parameters::Lambda)];
+        let mu = params[usize::from(TKF91Parameters::Mu)];
+        valid_lambda_mu(lambda, mu)?;
+
+        let mut params = vec![0.0; TKF91_INTERNAL_PARAM_COUNT];
+        params[usize::from(TKF91SearchParameters::Ratio)] = lambda / mu;
+        params[usize::from(TKF91SearchParameters::Rate)] = (lambda + mu) / 2.0;
+        params[usize::from(TKF91SearchParameters::Lambda)] = lambda;
+        params[usize::from(TKF91SearchParameters::Mu)] = mu;
+        Ok(Self { params })
+    }
+
+    /// Recomputes the helper coordinates from the atomic parameters.
+    /// Called after an atomic parameter was set.
+    fn sync_helpers_with_params(&mut self) {
+        let lambda = self.params[usize::from(TKF91SearchParameters::Lambda)];
+        let mu = self.params[usize::from(TKF91SearchParameters::Mu)];
+        self.params[usize::from(TKF91SearchParameters::Ratio)] = lambda / mu;
+        self.params[usize::from(TKF91SearchParameters::Rate)] = (lambda + mu) / 2.0;
+    }
+
+    /// Recomputes the atomic parameters from the helper coordinates.
+    /// Called after a helper parameter was set.
+    fn sync_params_with_helpers(&mut self) {
+        let rate = self.params[usize::from(TKF91SearchParameters::Rate)];
+        let ratio = self.params[usize::from(TKF91SearchParameters::Ratio)];
+        self.params[usize::from(TKF91SearchParameters::Lambda)] =
+            2.0 * rate * ratio / (1.0 + ratio);
+        self.params[usize::from(TKF91SearchParameters::Mu)] = 2.0 * rate / (1.0 + ratio);
     }
 }
 
 impl Default for TKF91IndelModel {
     fn default() -> Self {
-        Self {
-            params: vec![DEFAULT_LAMBDA, DEFAULT_MU],
-        }
+        let lambda = DEFAULT_LAMBDA;
+        let mu = DEFAULT_MU;
+        let mut params = vec![0.0; TKF91_INTERNAL_PARAM_COUNT];
+        params[usize::from(TKF91SearchParameters::Ratio)] = lambda / mu;
+        params[usize::from(TKF91SearchParameters::Rate)] = (lambda + mu) / 2.0;
+        params[usize::from(TKF91SearchParameters::Lambda)] = lambda;
+        params[usize::from(TKF91SearchParameters::Mu)] = mu;
+        Self { params }
     }
 }
 
 impl TKFModel for TKF91IndelModel {
     fn lambda(&self) -> f64 {
-        self.params[usize::from(TKF91Parameters::Lambda)]
+        self.params[usize::from(TKF91SearchParameters::Lambda)]
     }
 
     fn mu(&self) -> f64 {
-        self.params[usize::from(TKF91Parameters::Mu)]
-    }
-
-    fn params(&self) -> &[f64] {
-        &self.params
-    }
-
-    fn set_param(&mut self, idx: usize, value: f64) {
-        self.params[idx] = value;
-    }
-
-    fn param_range(&self, idx: usize) -> ParamRange {
-        let param = TKF91Parameters::from_primitive(idx);
-        match param {
-            TKF91Parameters::Lambda => (f64::EPSILON, self.mu() - f64::EPSILON),
-            TKF91Parameters::Mu => (self.lambda() + f64::EPSILON, f64::MAX),
-            _ => panic!("Invalid parameter index for TKF model: {param:?}"),
-        }
+        self.params[usize::from(TKF91SearchParameters::Mu)]
     }
 
     fn ln_insertion_factor_at_root(&self) -> f64 {
@@ -94,6 +131,40 @@ impl TKFModel for TKF91IndelModel {
     /// Since TKF91 is a single-residue indel model, each position is its own block.
     fn get_blocks<AA: AncestralAlignment>(&self, msa: &AA) -> Vec<usize> {
         (1..msa.len() + 1).collect()
+    }
+
+    fn param_count(&self) -> usize {
+        TKF91_SEARCH_PARAM_COUNT
+    }
+
+    fn param(&self, idx: usize) -> f64 {
+        self.params[idx]
+    }
+
+    fn set_param(&mut self, idx: usize, value: f64) {
+        let param = TKF91SearchParameters::from_primitive(idx);
+        match param {
+            TKF91SearchParameters::Lambda | TKF91SearchParameters::Mu => {
+                self.params[idx] = value;
+                self.sync_helpers_with_params();
+            }
+            TKF91SearchParameters::Ratio | TKF91SearchParameters::Rate => {
+                self.params[idx] = value;
+                self.sync_params_with_helpers();
+            }
+            _ => panic!("Invalid parameter index: {}", idx),
+        };
+    }
+
+    fn param_range(&self, idx: usize) -> ParamRange {
+        let param = TKF91SearchParameters::from_primitive(idx);
+        match param {
+            TKF91SearchParameters::Ratio => (f64::EPSILON, 1.0 - f64::EPSILON),
+            TKF91SearchParameters::Rate => (f64::EPSILON, f64::MAX),
+            TKF91SearchParameters::Lambda => (f64::EPSILON, self.mu() - f64::EPSILON),
+            TKF91SearchParameters::Mu => (self.lambda() + f64::EPSILON, f64::MAX),
+            _ => panic!("Invalid parameter index for TKF model: {param:?}"),
+        }
     }
 }
 
