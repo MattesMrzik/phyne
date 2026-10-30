@@ -357,7 +357,7 @@ mod private_tests {
 
     #[test]
     fn tkf92_setting_params_doesnt_drift() {
-        // During prototyping when setting a new ratio/rate the lambda and mu
+        // During prototyping when setting a new ratio or rate the lambda and mu
         // would be used to calculate new values for lambda and mu.
         // This caused parameters to differ slightly when setting rate or ratio multiple times,
         // i.e., setting rate to x_1, x_2, ..., x_n or setting rate straight to x_n would yield
