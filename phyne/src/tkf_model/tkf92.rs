@@ -38,6 +38,9 @@ const TKF92_SEARCH_PARAM_COUNT: usize = 3;
 ///
 /// Searching over derived parameters can be useful for optimisation in case of constraints like lambda < mu,
 /// which is assumed so that the equilibrium root length distribution is well-defined.
+///
+/// Code and tests are in a way that allows for changing the order. In combination with the
+/// [`TKF92_SEARCH_PARAM_COUNT`] constant, this allows for ad hoc testing of different search strategies.
 #[derive(Debug, Eq, PartialEq, FromPrimitive, IntoPrimitive)]
 #[repr(usize)]
 enum TKF92SearchParameters {
